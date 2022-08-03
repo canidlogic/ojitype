@@ -1,4 +1,47 @@
-1400 * Hyphen
+000a ~ Line_Feed
+0020 ~ Space
+0021 * Exclamation_Mark
+0022 * ASCII_Quote
+0023 * Number_Sign
+0024 * Dollar_Sign
+0025 * Percent_Sign
+0026 * Ampersand
+0028 * Parenthesis_Left
+0029 * Parenthesis_Right
+002a * Asterisk
+002b * Plus
+002c * Comma
+002d * ASCII_Hyphen
+002e * ASCII_Period
+002f * Slash
+0030 * Digit_Zero
+0031 * Digit_One
+0032 * Digit_Two
+0033 * Digit_Three
+0034 * Digit_Four
+0035 * Digit_Five
+0036 * Digit_Six
+0037 * Digit_Seven
+0038 * Digit_Eight
+0039 * Digit_Nine
+003a * Colon
+003b * Semicolon
+003d * Equals
+003f * Question_Mark
+0040 * At_Sign
+005b * Square_Bracket_Left
+005c * Backslash
+005d * Square_Bracket_Right
+005f * Underscore
+007b * Curly_Bracket_Left
+007c * Vertical_Bar
+007d * Curly_Bracket_Right
+007e * Tilde
+00a0 ~ Non_Breaking_Space
+00ab * Angle_Quote_Left
+00ad ~ Soft_Hyphen
+00bb * Angle_Quote_Right
+1400 * Syllabics_Hyphen
 1401 e
 1403 i
 1404 +i
@@ -27,7 +70,9 @@
 1423 'n
 1424 w
 1426 h
+1427 * Syllabics_Middot
 1428 'c
+1429 "y
 142f pe
 1431 pi
 1432 p+i
@@ -154,7 +199,30 @@
 14cd nw+a
 14ce nu+a
 14d0 n
-14ec l
+14d3 le
+14d5 li
+14d6 l+i
+14d7 lo
+14d8 l+o
+14da la
+14db l+a
+14dc lwe
+14dd lue
+14de lwi
+14df lui
+14e0 lw+i
+14e1 lu+i
+14e2 lwo
+14e3 luo
+14e4 lw+o
+14e5 lu+o
+14e6 lwa
+14e7 lua
+14e8 lw+a
+14e9 lu+a
+14ea l
+14eb "l
+14ec 'l
 14ed se
 14ef si
 14f0 s+i
@@ -221,8 +289,19 @@
 153b yw+a
 153c yu+a
 153e y
-1552 r
-166e * Period
+1543 re
+1546 ri
+1547 r+i
+1548 ro
+1549 r+o
+154b ra
+154c r+a
+154e rw+a
+154f ru+a
+1550 r
+1551 "r
+1552 'r
+166e * Syllabics_Full_Stop
 18c6 nwi
 18c7 nui
 18c8 nw+i
@@ -231,4 +310,16 @@
 18cb nuo
 18cc nw+o
 18cd nu+o
+18ce rwe
+18cf rwi
+18d0 rw+i
+18d1 rwo
+18d2 rw+o
+18d3 rwa
 18df 'y
+18e0 rue
+200b ~ Zero_Width_Space
+2015 * Horizontal_Bar
+201c * Double_Quote_Left
+201d * Double_Quote_Right
+2026 * Horizontal_Ellipsis
