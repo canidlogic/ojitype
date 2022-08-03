@@ -1,0 +1,1051 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8"/>
+    <title>Ojitype</title>
+    <meta name="viewport" 
+      content="width=device-width, initial-scale=1.0"/>
+    <style>
+
+@font-face {
+    font-family: 'Noto Sans Canadian Aboriginal';
+    src: url('NotoSansCanadianAboriginal-Regular.woff') format('woff');
+    font-weight: normal;
+    font-style: normal;
+}
+
+body {
+  max-width: 35em;
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: 0.5em;
+  padding-right: 1.5em;
+  margin-top: 2.5em;
+  margin-bottom: 5em;
+  font-family: 'Noto Sans Canadian Aboriginal', sans-serif;
+  color: black;
+  background-color: whitesmoke;
+}
+
+h1 {
+  font-size: 200%;
+}
+
+#tblKeys {
+  border-collapse: "collapse";
+  width: 100%;
+}
+
+#tblKeys td {
+  text-align: center;
+  border: medium outset;
+  padding-left: 0;
+  padding-right: 0;
+  padding-top: 0.5em;
+  padding-bottom: 0.5em;
+  cursor: pointer;
+  background-color: white;
+}
+
+#tblKeys .blank {
+  border: none;
+  cursor: auto;
+  background-color: whitesmoke;
+}
+
+#tblKeys .notch {
+  background-color: silver;
+}
+
+#tblKeys .spec {
+  background-color: gold;
+}
+
+#tblKeys .punc {
+  background-color: lightgreen;
+}
+
+#tblKeys .mod {
+  background-color: lightblue;
+}
+
+#divBuffer {
+  margin-top: 1.5em;
+  background-color: white;
+  border: medium inset;
+  padding: 0.5em;
+  text-align: center;
+}
+
+#tblMode {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 1.5em;
+}
+
+#tblMode th {
+  text-align: center;
+  font-weight: normal;
+  font-size: 200%;
+}
+
+#tblMode td {
+  width: 50%;
+  font-size: larger;
+  border: medium inset;
+  padding: 0.5em;
+}
+
+#txtInput {
+  width: 100%;
+  height: 30em;
+  overflow: auto;
+  resize: vertical;
+  border: medium inset;
+  margin-left: 0;
+  margin-right: 0;
+  margin-top: 1.5em;
+  padding: 0.25em;
+  font-family: 'Noto Sans Canadian Aboriginal', sans-serif;
+  font-size: larger;
+  background-color: white;
+}
+
+#divPanel {
+  margin-top: 1em;
+}
+
+#divPanel input {
+  font-size: larger;
+  padding: 0.5em;
+}
+    
+    </style>
+    <script>
+
+// Wrap everything in an anonymous function that we immediately invoke
+// after it is declared -- this prevents anything from being implicitly
+// added to global scope
+(function() {
+
+  /*
+   * Constants
+   * =========
+   */
+
+  /*
+   * Mapping of KeyboardEvent.code values to what should be typed, or
+   * empty string if nothing should be typed for this key.
+   *
+   * Keycodes that are not keys of this object at all will have their
+   * default behavior.  So, it is NOT the same to map a keycode to an
+   * empty string as opposed to leaving it out.
+   *
+   * The state of shift and caps lock is ignored in the virtual
+   * keyboard, since Bopomofo doesn't have any notion of case.  However,
+   * if modifier keys such as CTRL or ALT are present, then the virtual
+   * keyboard is completely ignored so that shortcuts for copying and
+   * pasting and so forth can work.
+   */
+  var KEY_MAP = {
+    "Backquote"    : "~",
+    "Digit1"       : "!",
+    "Digit2"       : "\u201c",
+    "Digit3"       : "\u201d",
+    "Digit4"       : ":",
+    "Digit5"       : ";",
+    "Digit6"       : "/",
+    "Digit7"       : "*",
+    "Digit8"       : "(",
+    "Digit9"       : ")",
+    "Digit0"       : "\u2015",
+    "Minus"        : "\u1400",
+    "Equal"        : "\u1400",
+    
+    "KeyQ"         : "\u18df",
+    "KeyW"         : "\u140e",
+    "KeyE"         : "\u1401",
+    "KeyR"         : "\u1552",
+    "KeyT"         : "\u1455",
+    "KeyY"         : "\u152d",
+    "KeyU"         : "\u140f",
+    "KeyI"         : "\u1403",
+    "KeyO"         : "\u1405",
+    "KeyP"         : "\u1438",
+    "BracketLeft"  : "[",
+    "BracketRight" : "]",
+    "Backslash"    : "\u14bc",
+    
+    "KeyA"         : "\u140a",
+    "KeyS"         : "\u14f4",
+    "KeyD"         : "\u141f",
+    "KeyF"         : "\u1515",
+    "KeyG"         : "\u1420",
+    "KeyH"         : "\u1426",
+    "KeyJ"         : "\u1428",
+    "KeyK"         : "\u1472",
+    "KeyL"         : "\u14ec",
+    "Semicolon"    : "\u1404",
+    "Quote"        : "\u001b",
+    
+    "KeyZ"         : "\u1422",
+    "KeyX"         : "\u1423",
+    "KeyC"         : "\u1490",
+    "KeyV"         : "\u1421",
+    "KeyB"         : "\u144a",
+    "KeyN"         : "\u14c7",
+    "KeyM"         : "\u14aa",
+    "Comma"        : ",",
+    "Period"       : "\u166e",
+    "Slash"        : "?",
+
+    "Space"        : " "
+  };
+
+  /*
+   * String containing all the "hard finals."
+   *
+   * Hard finals are full finals that may be composed into syllables.
+   */
+  var HARD_FINALS =
+    "\u1455\u152d\u1438\u14f4\u1515\u1472\u1490\u14c7\u14aa";
+  
+  /*
+   * String containing all the plain vowels.
+   */
+  var VOWELS = "\u1401\u1403\u1405\u140a";
+
+  /*
+   * Mapping of consonant entities to their eastern final equivalents.
+   */
+  var ENTITY_TO_FINAL = {
+    "\u1455": "\u1466",
+    "\u152d": "\u153e",
+    "\u1438": "\u1449",
+    "\u14f4": "\u1505",
+    "\u1515": "\u1525",
+    "\u1472": "\u1483",
+    "\u1490": "\u14a1",
+    "\u14c7": "\u14d0",
+    "\u14aa": "\u14bb"
+  };
+
+  /*
+   * The composition table, which maps entity sequences to their result
+   * strings.
+   *
+   * This is generated automatically with the buildtable.pl script.
+   */
+  var COMP_TABLE = {
+"\u140a": "\u140a",
+"\u1401": "\u1401",
+"\u1403": "\u1403",
+"\u1405": "\u1405",
+"\u1404\u140a": "\u140b",
+"\u1404\u1401": "\u1401",
+"\u1404\u1403": "\u1404",
+"\u1404\u1405": "\u1406",
+"\u140e\u140a": "\u1417",
+"\u140e\u1401": "\u140c",
+"\u140e\u1403": "\u140e",
+"\u140e\u1405": "\u1412",
+"\u140e\u1404\u140a": "\u1419",
+"\u140e\u1404\u1401": "\u140c",
+"\u140e\u1404\u1403": "\u1410",
+"\u140e\u1404\u1405": "\u1414",
+"\u140f\u140a": "\u1418",
+"\u140f\u1401": "\u140d",
+"\u140f\u1403": "\u140f",
+"\u140f\u1405": "\u1413",
+"\u140f\u1404\u140a": "\u141a",
+"\u140f\u1404\u1401": "\u140d",
+"\u140f\u1404\u1403": "\u1411",
+"\u140f\u1404\u1405": "\u1415",
+"\u1438\u140a": "\u1438",
+"\u1438\u1401": "\u142f",
+"\u1438\u1403": "\u1431",
+"\u1438\u1405": "\u1433",
+"\u1438\u1404\u140a": "\u1439",
+"\u1438\u1404\u1401": "\u142f",
+"\u1438\u1404\u1403": "\u1432",
+"\u1438\u1404\u1405": "\u1434",
+"\u1438\u140e\u140a": "\u1444",
+"\u1438\u140e\u1401": "\u143a",
+"\u1438\u140e\u1403": "\u143c",
+"\u1438\u140e\u1405": "\u1440",
+"\u1438\u140e\u1404\u140a": "\u1446",
+"\u1438\u140e\u1404\u1401": "\u143a",
+"\u1438\u140e\u1404\u1403": "\u143e",
+"\u1438\u140e\u1404\u1405": "\u1442",
+"\u1438\u140f\u140a": "\u1445",
+"\u1438\u140f\u1401": "\u143b",
+"\u1438\u140f\u1403": "\u143d",
+"\u1438\u140f\u1405": "\u1441",
+"\u1438\u140f\u1404\u140a": "\u1447",
+"\u1438\u140f\u1404\u1401": "\u143b",
+"\u1438\u140f\u1404\u1403": "\u143f",
+"\u1438\u140f\u1404\u1405": "\u1443",
+"\u1455\u140a": "\u1455",
+"\u1455\u1401": "\u144c",
+"\u1455\u1403": "\u144e",
+"\u1455\u1405": "\u1450",
+"\u1455\u1404\u140a": "\u1456",
+"\u1455\u1404\u1401": "\u144c",
+"\u1455\u1404\u1403": "\u144f",
+"\u1455\u1404\u1405": "\u1451",
+"\u1455\u140e\u140a": "\u1461",
+"\u1455\u140e\u1401": "\u1457",
+"\u1455\u140e\u1403": "\u1459",
+"\u1455\u140e\u1405": "\u145d",
+"\u1455\u140e\u1404\u140a": "\u1463",
+"\u1455\u140e\u1404\u1401": "\u1457",
+"\u1455\u140e\u1404\u1403": "\u145b",
+"\u1455\u140e\u1404\u1405": "\u145f",
+"\u1455\u140f\u140a": "\u1462",
+"\u1455\u140f\u1401": "\u1458",
+"\u1455\u140f\u1403": "\u145a",
+"\u1455\u140f\u1405": "\u145e",
+"\u1455\u140f\u1404\u140a": "\u1464",
+"\u1455\u140f\u1404\u1401": "\u1458",
+"\u1455\u140f\u1404\u1403": "\u145c",
+"\u1455\u140f\u1404\u1405": "\u1460",
+"\u1490\u140a": "\u1490",
+"\u1490\u1401": "\u1489",
+"\u1490\u1403": "\u148b",
+"\u1490\u1405": "\u148d",
+"\u1490\u1404\u140a": "\u1491",
+"\u1490\u1404\u1401": "\u1489",
+"\u1490\u1404\u1403": "\u148c",
+"\u1490\u1404\u1405": "\u148e",
+"\u1490\u140e\u140a": "\u149c",
+"\u1490\u140e\u1401": "\u1492",
+"\u1490\u140e\u1403": "\u1494",
+"\u1490\u140e\u1405": "\u1498",
+"\u1490\u140e\u1404\u140a": "\u149e",
+"\u1490\u140e\u1404\u1401": "\u1492",
+"\u1490\u140e\u1404\u1403": "\u1496",
+"\u1490\u140e\u1404\u1405": "\u149a",
+"\u1490\u140f\u140a": "\u149d",
+"\u1490\u140f\u1401": "\u1493",
+"\u1490\u140f\u1403": "\u1495",
+"\u1490\u140f\u1405": "\u1499",
+"\u1490\u140f\u1404\u140a": "\u149f",
+"\u1490\u140f\u1404\u1401": "\u1493",
+"\u1490\u140f\u1404\u1403": "\u1497",
+"\u1490\u140f\u1404\u1405": "\u149b",
+"\u1472\u140a": "\u1472",
+"\u1472\u1401": "\u146b",
+"\u1472\u1403": "\u146d",
+"\u1472\u1405": "\u146f",
+"\u1472\u1404\u140a": "\u1473",
+"\u1472\u1404\u1401": "\u146b",
+"\u1472\u1404\u1403": "\u146e",
+"\u1472\u1404\u1405": "\u1470",
+"\u1472\u140e\u140a": "\u147e",
+"\u1472\u140e\u1401": "\u1474",
+"\u1472\u140e\u1403": "\u1476",
+"\u1472\u140e\u1405": "\u147a",
+"\u1472\u140e\u1404\u140a": "\u1480",
+"\u1472\u140e\u1404\u1401": "\u1474",
+"\u1472\u140e\u1404\u1403": "\u1478",
+"\u1472\u140e\u1404\u1405": "\u147c",
+"\u1472\u140f\u140a": "\u147f",
+"\u1472\u140f\u1401": "\u1475",
+"\u1472\u140f\u1403": "\u1477",
+"\u1472\u140f\u1405": "\u147b",
+"\u1472\u140f\u1404\u140a": "\u1481",
+"\u1472\u140f\u1404\u1401": "\u1475",
+"\u1472\u140f\u1404\u1403": "\u1479",
+"\u1472\u140f\u1404\u1405": "\u147d",
+"\u14aa\u140a": "\u14aa",
+"\u14aa\u1401": "\u14a3",
+"\u14aa\u1403": "\u14a5",
+"\u14aa\u1405": "\u14a7",
+"\u14aa\u1404\u140a": "\u14ab",
+"\u14aa\u1404\u1401": "\u14a3",
+"\u14aa\u1404\u1403": "\u14a6",
+"\u14aa\u1404\u1405": "\u14a8",
+"\u14aa\u140e\u140a": "\u14b6",
+"\u14aa\u140e\u1401": "\u14ac",
+"\u14aa\u140e\u1403": "\u14ae",
+"\u14aa\u140e\u1405": "\u14b2",
+"\u14aa\u140e\u1404\u140a": "\u14b8",
+"\u14aa\u140e\u1404\u1401": "\u14ac",
+"\u14aa\u140e\u1404\u1403": "\u14b0",
+"\u14aa\u140e\u1404\u1405": "\u14b4",
+"\u14aa\u140f\u140a": "\u14b7",
+"\u14aa\u140f\u1401": "\u14ad",
+"\u14aa\u140f\u1403": "\u14af",
+"\u14aa\u140f\u1405": "\u14b3",
+"\u14aa\u140f\u1404\u140a": "\u14b9",
+"\u14aa\u140f\u1404\u1401": "\u14ad",
+"\u14aa\u140f\u1404\u1403": "\u14b1",
+"\u14aa\u140f\u1404\u1405": "\u14b5",
+"\u14c7\u140a": "\u14c7",
+"\u14c7\u1401": "\u14c0",
+"\u14c7\u1403": "\u14c2",
+"\u14c7\u1405": "\u14c4",
+"\u14c7\u1404\u140a": "\u14c8",
+"\u14c7\u1404\u1401": "\u14c0",
+"\u14c7\u1404\u1403": "\u14c3",
+"\u14c7\u1404\u1405": "\u14c5",
+"\u14c7\u140e\u140a": "\u14cb",
+"\u14c7\u140e\u1401": "\u14c9",
+"\u14c7\u140e\u1403": "\u18c6",
+"\u14c7\u140e\u1405": "\u18ca",
+"\u14c7\u140e\u1404\u140a": "\u14cd",
+"\u14c7\u140e\u1404\u1401": "\u14c9",
+"\u14c7\u140e\u1404\u1403": "\u18c8",
+"\u14c7\u140e\u1404\u1405": "\u18cc",
+"\u14c7\u140f\u140a": "\u14cc",
+"\u14c7\u140f\u1401": "\u14ca",
+"\u14c7\u140f\u1403": "\u18c7",
+"\u14c7\u140f\u1405": "\u18cb",
+"\u14c7\u140f\u1404\u140a": "\u14ce",
+"\u14c7\u140f\u1404\u1401": "\u14ca",
+"\u14c7\u140f\u1404\u1403": "\u18c9",
+"\u14c7\u140f\u1404\u1405": "\u18cd",
+"\u14f4\u140a": "\u14f4",
+"\u14f4\u1401": "\u14ed",
+"\u14f4\u1403": "\u14ef",
+"\u14f4\u1405": "\u14f1",
+"\u14f4\u1404\u140a": "\u14f5",
+"\u14f4\u1404\u1401": "\u14ed",
+"\u14f4\u1404\u1403": "\u14f0",
+"\u14f4\u1404\u1405": "\u14f2",
+"\u14f4\u140e\u140a": "\u1500",
+"\u14f4\u140e\u1401": "\u14f6",
+"\u14f4\u140e\u1403": "\u14f8",
+"\u14f4\u140e\u1405": "\u14fc",
+"\u14f4\u140e\u1404\u140a": "\u1502",
+"\u14f4\u140e\u1404\u1401": "\u14f6",
+"\u14f4\u140e\u1404\u1403": "\u14fa",
+"\u14f4\u140e\u1404\u1405": "\u14fe",
+"\u14f4\u140f\u140a": "\u1501",
+"\u14f4\u140f\u1401": "\u14f7",
+"\u14f4\u140f\u1403": "\u14f9",
+"\u14f4\u140f\u1405": "\u14fd",
+"\u14f4\u140f\u1404\u140a": "\u1503",
+"\u14f4\u140f\u1404\u1401": "\u14f7",
+"\u14f4\u140f\u1404\u1403": "\u14fb",
+"\u14f4\u140f\u1404\u1405": "\u14ff",
+"\u1515\u140a": "\u1515",
+"\u1515\u1401": "\u1510",
+"\u1515\u1403": "\u1511",
+"\u1515\u1405": "\u1513",
+"\u1515\u1404\u140a": "\u1516",
+"\u1515\u1404\u1401": "\u1510",
+"\u1515\u1404\u1403": "\u1512",
+"\u1515\u1404\u1405": "\u1514",
+"\u1515\u140e\u140a": "\u1521",
+"\u1515\u140e\u1401": "\u1517",
+"\u1515\u140e\u1403": "\u1519",
+"\u1515\u140e\u1405": "\u151d",
+"\u1515\u140e\u1404\u140a": "\u1523",
+"\u1515\u140e\u1404\u1401": "\u1517",
+"\u1515\u140e\u1404\u1403": "\u151b",
+"\u1515\u140e\u1404\u1405": "\u151f",
+"\u1515\u140f\u140a": "\u1522",
+"\u1515\u140f\u1401": "\u1518",
+"\u1515\u140f\u1403": "\u151a",
+"\u1515\u140f\u1405": "\u151e",
+"\u1515\u140f\u1404\u140a": "\u1524",
+"\u1515\u140f\u1404\u1401": "\u1518",
+"\u1515\u140f\u1404\u1403": "\u151c",
+"\u1515\u140f\u1404\u1405": "\u1520",
+"\u152d\u140a": "\u152d",
+"\u152d\u1401": "\u1526",
+"\u152d\u1403": "\u1528",
+"\u152d\u1405": "\u152a",
+"\u152d\u1404\u140a": "\u152e",
+"\u152d\u1404\u1401": "\u1526",
+"\u152d\u1404\u1403": "\u1529",
+"\u152d\u1404\u1405": "\u152b",
+"\u152d\u140e\u140a": "\u1539",
+"\u152d\u140e\u1401": "\u152f",
+"\u152d\u140e\u1403": "\u1531",
+"\u152d\u140e\u1405": "\u1535",
+"\u152d\u140e\u1404\u140a": "\u153b",
+"\u152d\u140e\u1404\u1401": "\u152f",
+"\u152d\u140e\u1404\u1403": "\u1533",
+"\u152d\u140e\u1404\u1405": "\u1537",
+"\u152d\u140f\u140a": "\u153a",
+"\u152d\u140f\u1401": "\u1530",
+"\u152d\u140f\u1403": "\u1532",
+"\u152d\u140f\u1405": "\u1536",
+"\u152d\u140f\u1404\u140a": "\u153c",
+"\u152d\u140f\u1404\u1401": "\u1530",
+"\u152d\u140f\u1404\u1403": "\u1534",
+"\u152d\u140f\u1404\u1405": "\u1538"
+};
+
+  /*
+   * Local data
+   * ==========
+   */
+  
+  /*
+   * Flag set to true when virtual keyboard is "on" and intercepting
+   * key events, false when virtual keyboard is "off" and typing is
+   * system keyboard.
+   */
+  var m_virtual = true;
+  
+  /*
+   * Buffered syllabics entities that are being composed.
+   */
+  var m_buf = "";
+
+  /*
+   * Local functions
+   * ===============
+   */
+
+  /*
+   * Report an error to console and throw an exception for a fault
+   * occurring within this module.
+   *
+   * Parameters:
+   *
+   *   func_name : string - the name of the function in this module
+   *
+   *   loc : number(int) - the location within the function
+   */
+  function fault(func_name, loc) {
+    
+    // If parameters not valid, set to unknown:0
+    if ((typeof func_name !== "string") || (typeof loc !== "number")) {
+      func_name = "unknown";
+      loc = 0;
+    }
+    loc = Math.floor(loc);
+    if (!isFinite(loc)) {
+      loc = 0;
+    }
+    
+    // Report error to console
+    console.log("Fault at " + func_name + ":" + String(loc) +
+                  " in bopomofo.html");
+    
+    // Throw exception
+    throw ("bpmf:" + func_name + ":" + String(loc));
+  }
+
+  /*
+   * Update the buffer display to match the buffer contents.
+   */
+  function updateBuffer() {
+    var func_name = "updateBuffer";
+    var e;
+    
+    // Get buffer DIV
+    e = document.getElementById("divBuffer");
+    if (!e) {
+      fault(func_name, 100);
+    }
+    
+    // Update buffer display
+    if (m_buf.length < 1) {
+      e.innerHTML = "&nbsp;";
+    } else {
+      e.innerHTML = m_buf;
+    }
+  }
+
+  /*
+   * Clear any composing syllabics entities that might be in the buffer
+   * and update buffer display.
+   */
+  function clearBuffer() {
+    m_buf = "";
+    updateBuffer();
+  }
+
+  /*
+   * Unified event handler for when a syllabics entity is selected,
+   * either from a button on the virtual syllabics keyboard, or through
+   * a remapped keypress in the input box.
+   *
+   * Parameters:
+   *
+   *   c : string - a single-character string containing the codepoint
+   */
+  function handleEntity(c) {
+    var func_name = "handleEntity";
+    var i, c, eseq;
+    
+    // Check parameter
+    if (typeof(c) !== "string") {
+      fault(func_name, 100);
+    }
+    if (c.length !== 1) {
+      fault(func_name, 101);
+    }
+    
+    // Handle the flush entity first since that may be invoked
+    // recursively
+    if (c === "\u001b") {
+      // Type all the characters in the buffer
+      for(i = 0; i < m_buf.length; i++) {
+        // Get current character
+        c = m_buf.charAt(i);
+        
+        // If current character is vowel length mark, ignore it since
+        // that has no visible form
+        if (c === "\u1404") {
+          continue;
+        }
+        
+        // If current character is w-dot, type the W final
+        if ((c === "\u140e") || (c === "\u140f")) {
+          typeString("\u1424");
+          continue;
+        }
+        
+        // Otherwise, the entity must be in the ENTITY_TO_FINAL map
+        if (!(c in ENTITY_TO_FINAL)) {
+          fault(func_name, 200);
+        }
+        
+        // Type the final the entity converts to
+        typeString(ENTITY_TO_FINAL[c]);
+      }
+      
+      // Clear the buffer
+      clearBuffer();
+      
+      // Finished with processing the flush entity
+      return;
+    }
+    
+    // If the entity is not a hard final, not a vowel, and not a w-dot
+    // or vowel length entity, then it is "atomic", so handle that as a
+    // special case
+    if ((HARD_FINALS.indexOf(c) < 0) && (VOWELS.indexOf(c) < 0) &&
+          (c !== "\u140e") && (c !== "\u140f") && (c !== "\u1404")) {
+      // Atomic entity, so begin by recursively processing a flush key
+      handleEntity("\u001b");
+      
+      // Atomic entities should be typed as-is
+      typeString(c);
+      return;
+    }
+    
+    // If we got here, then the entity is not atomic and not a flush;
+    // handle the specific kind of entity
+    if (HARD_FINALS.indexOf(c) >= 0) { // ==============================
+      // Hard final; unless the buffer is empty, recursively flush
+      if (m_buf.length > 0) {
+        handleEntity("\u001b");
+      }
+      
+      // Add hard final to end of buffer
+      m_buf = m_buf + c;
+      updateBuffer();
+      
+    } else if ((c === "\u140e") || (c === "\u140f")) { // ==============
+      // W-dot entity; unless the buffer is empty or it has just a hard
+      // final at the start, recursively flush
+      if (m_buf.length > 0) {
+        if ((m_buf.length > 1) ||
+              (HARD_FINALS.indexOf(m_buf.charAt(0)) < 0)) {
+          handleEntity("\u001b");
+        }
+      }
+      
+      // Add the w-dot entity to end of buffer
+      m_buf = m_buf + c;
+      updateBuffer();
+      
+    } else if (c === "\u1404") { // ====================================
+      // Vowel length entity; if not already at end of buffer, add to
+      // end of buffer
+      if ((m_buf.length < 1) ||
+            (m_buf.charAt(m_buf.length - 1) !== "\u1404")) {
+        m_buf = m_buf + c;
+        updateBuffer();
+      }
+      
+    } else if (VOWELS.indexOf(c) >= 0) { // ============================
+      // Vowel entity, so get the complete entity sequence and clear the
+      // buffer
+      eseq = m_buf + c;
+      clearBuffer();
+      
+      // Entity sequence should be recognized
+      if (!(eseq in COMP_TABLE)) {
+        fault(func_name, 700);
+      }
+      
+      // Type the composed entity sequence
+      typeString(COMP_TABLE[eseq]);
+      
+    } else { // ========================================================
+      fault(func_name, 900);
+    }
+  }
+
+  /*
+   * Event handler for when a key is pressed on the input control.
+   */
+  function handleKey(e) {
+    var func_name = "handleKey";
+    
+    // First of all, check whether virtual keyboard is enabled, ignoring
+    // the event and clearing the buffer if virtual keyboard is disabled
+    if (!m_virtual) {
+      clearBuffer();
+      return;
+    }
+    
+    // Check whether ALT, CTRL, or META/OS modifier keys are present; if
+    // they are, then ignore the event so that shortcuts can work;
+    // ignore the state of Shift and CapsLock since case is irrelevant
+    // for syllabics; however, clear the buffer if this path is taken
+    if (e.getModifierState("Alt") ||
+        e.getModifierState("AltGraph") ||
+        e.getModifierState("Control") ||
+        e.getModifierState("Meta") ||
+        e.getModifierState("OS")) {
+      clearBuffer();
+      return;
+    }
+    
+    // Second, check whether the keycode is recognized in our virtual
+    // keyboard map; if it is not, then ignore the event so that default
+    // processing happens for things like arrow keys and backspace;
+    // however, clear the buffer if this path is taken
+    if (!(e.code in KEY_MAP)) {
+      clearBuffer();
+      return;
+    }
+    
+    // If we got here, then we have a virtual keyboard press that we are
+    // going to handle ourselves, so suppress default behavior
+    e.preventDefault();
+    
+    // Handle the virtual entity
+    handleEntity(KEY_MAP[e.code]);
+  }
+  
+  /*
+   * Event handler for when the mouse button is pressed down on one of
+   * the keys of the virtual keyboard.
+   */
+  function handleVkey(e) {
+    var func_name = "handleVkey";
+    var c;
+    
+    // Ignore call if target element has no ID
+    if (!("id" in e.target)) {
+      return;
+    }
+    if (typeof(e.target.id) !== "string") {
+      return;
+    }
+    
+    // Ignore call if ID of target element is not in proper format
+    if (!((/^keyb[0-9a-fA-F]{4}$/).test(e.target.id))) {
+      return;
+    }
+    
+    // If we got here, then target has ID in proper format, so last four
+    // characters in the ID are the codepoint of the entity in base-16
+    c = parseInt(e.target.id.slice(-4), 16);
+    c = String.fromCharCode(c);
+    
+    // Handle this entity
+    handleEntity(c);
+  }
+
+  /*
+   * Event handler for when the modal radio buttons change.
+   *
+   * The argument is ignored.  This function is also called during
+   * initialization to make sure the proper mode is displayed
+   */
+  function handleMode(e) {
+    var func_name = "handleMode";
+    var e, useSyl;
+    
+    // Determine whether the syllabics option is selected
+    e = document.getElementById("optSyl");
+    if (!e) {
+      fault(func_name, 100);
+    }
+    
+    useSyl = false;
+    if (e.checked) {
+      useSyl = true;
+    }
+    
+    // Update the virtual keyboard flag depending on whether we are in
+    // syllabics mode
+    if (useSyl) {
+      m_virtual = true;
+    } else {
+      m_virtual = false;
+    }
+    
+    // Show or hide the syllabics keyboard depending on whether we are
+    // in syllabics mode
+    e = document.getElementById("divKeyboard");
+    if (!e) {
+      fault(func_name, 200);
+    }
+    
+    if (useSyl) {
+      e.style.display = "block";
+    } else {
+      e.style.display = "none";
+    }
+  }
+
+  /*
+   * Given a string, add it to the input box at the current position.
+   *
+   * If the given string is empty, this call is ignored.
+   *
+   * Parameters:
+   *
+   *   str : string - string to add to input box
+   */
+  function typeString(str) {
+    var func_name = "typeString";
+    var eInput;
+    
+    // Check parameter
+    if (typeof(str) !== "string") {
+      fault(func_name, 100);
+    }
+    
+    // If string is empty, ignore this function call
+    if (str.length < 1) {
+      return;
+    }
+    
+    // Get the textarea control on the form
+    eInput = document.getElementById("txtInput");
+    if (!eInput) {
+      fault(func_name, 101);
+    }
+    
+    // Insert text at current position in text area and update position
+    // to after the text that was just inserted
+    eInput.setRangeText(
+      str,
+      eInput.selectionStart,
+      eInput.selectionEnd,
+      "end");
+  }
+
+  /*
+   * Public functions
+   * ================
+   */
+
+  /*
+   * Function invoked when the clipboard copy button is clicked.
+   *
+   * The text currently in the input box is copied to the system
+   * clipboard.
+   */
+  function handleCopy() {
+    var func_name = "handleCopy";
+    var e, str;
+    
+    // Get the current text from the text area
+    e = document.getElementById("txtInput");
+    if (!e) {
+      fault(func_name, 200);
+    }
+    str = e.value;
+    
+    // Asynchronously copy to the clipboard
+    navigator.clipboard.writeText(str);
+  }
+
+  /*
+   * Function invoked once the DOM has been loaded and is ready for
+   * scripting.
+   */
+  function handleLoad() {
+    var func_name = "handleLoad";
+    var eInput, eTDs, eTD, x;
+    
+    // Install our keypress handler on the text area
+    eInput = document.getElementById("txtInput");
+    if (!eInput) {
+      fault(func_name, 100);
+    }
+    eInput.addEventListener('keydown', handleKey);
+    
+    // Install our change handler on the radio buttons
+    eInput = document.getElementById("optSyl");
+    if (!eInput) {
+      fault(func_name, 110);
+    }
+    eInput.addEventListener('change', handleMode);
+    
+    eInput = document.getElementById("optRom");
+    if (!eInput) {
+      fault(func_name, 120);
+    }
+    eInput.addEventListener('change', handleMode);
+    
+    // Connect all of the virtual keyboard keys in the display table to
+    // event handlers
+    eTDs = document.getElementsByTagName("td");
+    for(x = 0; x < eTDs.length; x++) {
+      // Get current TD element
+      eTD = eTDs[x];
+      
+      // Ignore if no id attribute
+      if (!("id" in eTD)) {
+        continue;
+      }
+      if (typeof(eTD.id) !== "string") {
+        continue;
+      }
+      
+      // Ignore if ID of TD is not in correct format
+      if (!((/^keyb[0-9a-fA-F]{4}$/).test(eTD.id))) {
+        continue;
+      }
+      
+      // If we got here, then eTD is an element we need to connect to
+      // typeString through an event handler
+      eTD.addEventListener('mousedown', handleVkey);
+    }
+    
+    // Invoke the change handler so the display gets updated for the
+    // current mode
+    handleMode(false);
+    
+    // Make sure buffer starts out clear
+    clearBuffer();
+  }
+
+  /*
+   * Export declarations
+   * ===================
+   * 
+   * All exports are declared within a global "syltype" object.
+   */
+  
+  window.syltype = {
+    "handleCopy": handleCopy,
+    "handleLoad": handleLoad
+  };  
+
+}());
+
+// Call into our load handler once DOM is ready
+document.addEventListener('DOMContentLoaded', syltype.handleLoad);
+
+    </script>
+  </head>
+  <body>
+    <h1>Ojitype</h1>
+    <div id="divKeyboard">
+      <table id="tblKeys">
+        <tr>
+          <td id="keyb0021" class="punc">!</td>
+          <td id="keyb201c" class="punc">&#x201c;</td>
+          <td id="keyb201d" class="punc">&#x201d;</td>
+          <td id="keyb003a" class="punc">:</td>
+          <td id="keyb003b" class="punc">;</td>
+          <td id="keyb002f" class="punc">/</td>
+          <td id="keyb002a" class="punc">*</td>
+          <td id="keyb0028" class="punc">(</td>
+          <td id="keyb0029" class="punc">)</td>
+          <td id="keyb2015" class="punc">&#x2015;</td>
+          <td id="keyb1400" class="punc">&#x1400;</td>
+        </tr>
+        <tr>
+          <td id="keyb18df">&#x18df;</td>
+          <td id="keyb140e" class="mod">&#x140e;</td>
+          <td id="keyb1401">&#x1401;</td>
+          <td id="keyb1552">&#x1552;</td>
+          <td id="keyb1455">&#x1455;</td>
+          <td id="keyb152d">&#x152d;</td>
+          <td id="keyb140f" class="mod">&#x140f;</td>
+          <td id="keyb1403">&#x1403;</td>
+          <td id="keyb1405">&#x1405;</td>
+          <td id="keyb1438">&#x1438;</td>
+          <td id="keyb14bc" class="spec">&#x14bc;</td>
+        </tr>
+        <tr>
+          <td id="keyb140a">&#x140a;</td>
+          <td id="keyb14f4">&#x14f4;</td>
+          <td id="keyb141f">&#x141f;</td>
+          <td id="keyb1515" class="notch">&#x1515;</td>
+          <td id="keyb1420">&#x1420;</td>
+          <td id="keyb1426">&#x1426;</td>
+          <td id="keyb1428" class="notch">&#x1428;</td>
+          <td id="keyb1472">&#x1472;</td>
+          <td id="keyb14ec">&#x14ec;</td>
+          <td id="keyb1404" class="mod">&#x1404;</td>
+          <td id="keyb001b" class="spec">X</td>
+        </tr>
+        <tr>
+          <td id="keyb1422">&#x1422;</td>
+          <td id="keyb1423">&#x1423;</td>
+          <td id="keyb1490">&#x1490;</td>
+          <td id="keyb1421">&#x1421;</td>
+          <td id="keyb144a">&#x144a;</td>
+          <td id="keyb14c7">&#x14c7;</td>
+          <td id="keyb14aa">&#x14aa;</td>
+          <td id="keyb002c" class="punc">,</td>
+          <td id="keyb166e" class="punc">&#x166e;</td>
+          <td id="keyb003f" class="punc">?</td>
+          <td class="blank">&nbsp;</td>
+        </tr>
+        <tr>
+          <td colspan="3" class="blank">&nbsp;</td>
+          <td colspan="4" id="keyb0020" class="notch">&nbsp;</td>
+          <td colspan="4" class="blank">&nbsp;</td>
+        </tr>
+      </table>
+      <div id="divBuffer">&nbsp;</div>
+    </div>
+    <table id="tblMode">
+      <tr>
+        <th colspan="2">
+          Keyboard
+        </th>
+      </tr>
+      <tr>
+        <td>
+          <input
+            type="radio"
+            id="optSyl"
+            name="grpMode"
+            value="syllabics"
+            checked/>
+          Syllabics
+        </td>
+        <td>
+          <input
+            type="radio"
+            id="optRom"
+            name="grpMode"
+            value="roman"/>
+          Roman
+        </td>
+      </tr>
+    </table>
+    <textarea
+      id="txtInput"
+      autocorrect="off"
+      autofocus
+      spellcheck="false"></textarea>
+    <div id="divPanel">
+      <input
+        type="button"
+        id="btnCopy"
+        value="Copy to clipboard"
+        onclick="syltype.handleCopy()"/>
+    </div>
+  </body>
+</html>
