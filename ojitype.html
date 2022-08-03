@@ -1,0 +1,2798 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8"/>
+    <title>Ojitype</title>
+    <meta name="viewport" 
+      content="width=device-width, initial-scale=1.0"/>
+    <style>
+
+@font-face {
+    font-family: 'Noto Sans Canadian Aboriginal';
+    src: url('NotoSansCanadianAboriginal-Regular.woff') format('woff');
+    font-weight: normal;
+    font-style: normal;
+}
+
+body {
+  max-width: 35em;
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: 0.5em;
+  padding-right: 1.5em;
+  margin-top: 2.5em;
+  margin-bottom: 5em;
+  font-family: 'Noto Sans Canadian Aboriginal', sans-serif;
+  color: black;
+  background-color: whitesmoke;
+}
+
+h1 {
+  font-size: 200%;
+}
+
+.clsKeyDiv table {
+  border-collapse: "collapse";
+  width: 100%;
+}
+
+.clsKeyDiv td {
+  text-align: center;
+  border: medium outset;
+  padding-left: 0;
+  padding-right: 0;
+  padding-top: 0.5em;
+  padding-bottom: 0.5em;
+  cursor: pointer;
+  background-color: white;
+  width: 8.33%;
+}
+
+.clsKeyDiv .blank {
+  border: none;
+  cursor: auto;
+  background-color: whitesmoke;
+}
+
+.clsKeyDiv .screen {
+  border: medium inset;
+  cursor: auto;
+  background-color: linen;
+  font-family: 'Noto Sans Canadian Aboriginal', sans-serif;
+  font-size: smaller;
+}
+
+.clsKeyDiv .shifted {
+  background-color: red;
+  color: white;
+}
+
+.clsKeyDiv .notch {
+  background-color: silver;
+}
+
+.clsKeyDiv .spec {
+  background-color: gold;
+}
+
+.clsKeyDiv .punc {
+  background-color: aquamarine;
+}
+
+.clsKeyDiv .ghost {
+  background-color: orange;
+}
+
+.clsKeyDiv .comb {
+  background-color: lightgreen;
+}
+
+.clsKeyDiv .mod {
+  background-color: lightblue;
+}
+
+#txtInput {
+  width: 100%;
+  height: 30em;
+  overflow: auto;
+  resize: vertical;
+  border: medium inset;
+  margin-left: 0;
+  margin-right: 0;
+  margin-top: 1.5em;
+  padding: 0.25em;
+  font-family: 'Noto Sans Canadian Aboriginal', sans-serif;
+  font-size: larger;
+  background-color: white;
+}
+
+#divPanel {
+  margin-top: 1em;
+}
+
+#divPanel input {
+  font-size: larger;
+  padding: 0.5em;
+}
+    
+    </style>
+    <script>
+
+// Wrap everything in an anonymous function that we immediately invoke
+// after it is declared -- this prevents anything from being implicitly
+// added to global scope
+(function() {
+
+  /*
+   * Fault function
+   * ==============
+   */
+  
+  /*
+   * Report an error to console and throw an exception for a fault
+   * occurring within this module.
+   *
+   * Parameters:
+   *
+   *   func_name : string - the name of the function in this module
+   *
+   *   loc : number(int) - the location within the function
+   */
+  function fault(func_name, loc) {
+    
+    // If parameters not valid, set to unknown:0
+    if ((typeof func_name !== "string") || (typeof loc !== "number")) {
+      func_name = "unknown";
+      loc = 0;
+    }
+    loc = Math.floor(loc);
+    if (!isFinite(loc)) {
+      loc = 0;
+    }
+    
+    // Report error to console
+    console.log("Fault at " + func_name + ":" + String(loc) +
+                  " in ojitype.html");
+    
+    // Throw exception
+    throw ("ojitype:" + func_name + ":" + String(loc));
+  }
+
+  /*
+   * Constant generator functions
+   * ============================
+   */
+
+  /*
+   * Given VKEY_OP, generate COMP_CHAR string and return it.
+   *
+   * See the documentation of COMP_CHAR for further information.
+   */
+  function makeCompList(vdict) {
+    var func_name = "makeCompList";
+    var result, k, v, c;
+    
+    // Check parameter
+    if (typeof(vdict) !== "object") {
+      fault(func_name, 100);
+    }
+    
+    // Start result as empty string
+    result = "";
+    
+    // Go through all property keys in VKEY_OP
+    for(k in vdict) {
+      // Check key format
+      if (!((/^[0-3][0-5](0[0-9]|10|11)$/).test(k))) {
+        console.log("makeCompList: Bad key '" + k + "'");
+        fault(func_name, 200);
+      }
+      
+      // Get value and check type
+      v = vdict[k];
+      if (!(v instanceof Array)) {
+        console.log("makeCompList: Bad value for '" + k + "'");
+        fault(func_name, 210);
+      }
+      if (v.length < 2) {
+        console.log("makeCompList: Bad length for '" + k + "'");
+        fault(func_name, 220);
+      }
+      
+      // Further processing only if "d" value
+      if (v[1] === "d") {
+        // This type of record should have one more parameter
+        if (v.length !== 3) {
+          console.log("makeCompList: Wrong length for '" + k + "'");
+          fault(func_name, 230);
+        }
+        
+        // Get the codepoint string
+        c = v[2];
+        if ((typeof(c) !== "number") ||
+            (Math.floor(c) !== c) ||
+            (!((c >= 0x300) && (c <= 0x36f)))) {
+          console.log("makeCompList: Out of range for '" + k + "'");
+          fault(func_name, 240);
+        }
+        c = String.fromCharCode(c);
+      
+        // Add to result if not already present
+        if (result.indexOf(c) < 0) {
+          result = result + c;
+        }
+      }
+    }
+    
+    // Return result
+    return result;
+  }
+
+  /*
+   * Given COMP_DICT and COMP_CHAR, generate LOOKUP_DICT and return it.
+   *
+   * See the documentation of LOOKUP_DICT for further information.
+   */
+  function makeLookupDict(cdict, cchar) {
+    var func_name = "makeLookupDict";
+    var result, k, q, v, x, c, skip;
+    
+    // Check parameters
+    if (typeof(cdict) !== "object") {
+      fault(func_name, 100);
+    }
+    if (typeof(cchar) !== "string") {
+      fault(func_name, 101);
+    }
+    
+    // Start result as empty object
+    result = { };
+    
+    // Go through all property keys in COMP_DICT
+    for(k in cdict) {
+      // Key must be one character
+      if (k.length !== 1) {
+        console.log("makeLookupDict: Bad key '" + k + "'");
+        fault(func_name, 200);
+      }
+      
+      // Get hex value of key for diagnostics
+      q = (k.charCodeAt(0)).toString(16);
+      
+      // Get value
+      v = cdict[k];
+      
+      // Check value type
+      if (typeof(v) !== "string") {
+        console.log("makeLookupDict: Bad value for 0x" + q);
+        fault(func_name, 210);
+      }
+      
+      // Either length two or three
+      if ((v.length !== 2) && (v.length !== 3)) {
+        console.log("makeLookupDict: Bad length for 0x" + q);
+        fault(func_name, 220);
+      }
+      
+      // If first character of value is space, must be length two
+      if (v.charAt(0) === " ") {
+        if (v.length !== 2) {
+          console.log("makeLookupDict: Bad length for 0x" + q);
+          fault(func_name, 230);
+        }
+      }
+      
+      // First character may not be in COMP_CHAR, but all following
+      // characters must be in COMP_CHAR and furthermore in ascending
+      // numeric codepoint order; if any following character is not in
+      // COMP_CHAR, then ignore the record because it isn't relevant for
+      // our keyboard
+      skip = false;
+      for(x = 0; x < v.length; x++) {
+        // Get current character
+        c = v.charAt(x);
+        
+        // Check character set
+        if (x === 0) {
+          if (cchar.indexOf(c) >= 0) {
+            console.log("makeLookupDict: Bad format for 0x" + q);
+            fault(func_name, 240);
+          }
+        } else {
+          if (cchar.indexOf(c) < 0) {
+            // Record with unrecognized diacritic, so skip it
+            skip = true;
+            break;
+          }
+        }
+        
+        // If beyond second character, check that ascending codepoint
+        // order
+        if (x > 1) {
+          if (v.charCodeAt(x) <= v.charCodeAt(x - 1)) {
+            console.log("makeLookupDict: Bad order for 0x" + q);
+            fault(func_name, 260);
+          }
+        }
+      }
+      if (skip) {
+        continue;
+      }
+      
+      // Make sure value not already in result
+      if (v in result) {
+        console.log("makeLookupDict: Duplicate value for 0x" + q);
+        fault(func_name, 270);
+      }
+      
+      // Add to result
+      result[v] = k;
+    }
+    
+    // Return result
+    return result;
+  }
+
+  /*
+   * Constants
+   * =========
+   */
+
+  /*
+   * Array mapping virtual keyboard indices 0-1 to the ID of the DIV
+   * containing them.
+   */
+  var VKEY_DIVS = ["divKeyboardMain", "divKeyboardShifted",
+                  "divKeyboardRoman", "divKeyboardRomanShifted"];
+
+  /*
+   * Array containing the IDs of each of the keyboard screen DIVs.
+   */
+  var VKEY_SCRS = ["keybscr0", "keybscr1", "keybscr2", "keybscr3"];
+
+  /*
+   * Mapping of virtual keyboard TD element numbers to the actions the
+   * keys perform.
+   *
+   * The property names of this object are each four decimal digits.
+   * Each TD element in the HTML page that has an ID of the form
+   * "keyb####" where # is a decimal digit maps to the property named
+   * "####" in this object.  The first decimal digit is the keyboard
+   * number 0-4, where 0 is regular, 1 is shifted, 2 is roman, 3 is
+   * shifted roman.  The second decimal digit is the row of the key on
+   * the keyboard, 0-5, where 0 is the top row and 5 is the bottom row.
+   * The third and fourth decimal digits are a number in range 0-11,
+   * which indicate the column of the key on the keyboard, where 0 is
+   * the leftmost column and 11 is the rightmost column.  For keys that
+   * are larger than one cell, the upper-left component cell is used as
+   * its location.
+   *
+   * Actions are represented by an array.  The first element of the
+   * array is a string that will be displayed to the user when the user
+   * asks for information about that specific key.  It is the name of
+   * the character being typed or a brief description of what the key
+   * does.  The second element of the array is a string that selects the
+   * operation the key performs.  Any additional elements in the array
+   * are parameters to that specific operation.
+   *
+   * Operation "t" means type a character.  It is followed by a number
+   * parameter that stores the Unicode codepoint value to type.  You may
+   * use 0xa (LF) to represent a line break added by the enter key.
+   *
+   * Operation "c" means add a combining syllabics code to the
+   * composition buffer.  It is followed by a number parameter that
+   * stores a Unicode codepoint value representing the combining
+   * syllabics code.
+   *
+   * Operation "d" means add a roman combining diacritic code to the
+   * composition buffer.  It is followed by a number parameter that
+   * stores the Unicode codepoint value of the combining character.
+   *
+   * Operation "h" means the help key.  The user will be prompted to
+   * choose any key on the virtual keyboard and then a string
+   * identifying what that key types or does will be displayed.  This
+   * operation has no parameters.
+   *
+   * Operation "b" means backspace key.  This will attempt to delete the
+   * previous character.  This operation has no parameters.
+   *
+   * Operation "w" means warp to a different keyboard.  This takes a
+   * single parameter which is an integer 0-1 that chooses which
+   * keyboard should be switched to.
+   */
+  var VKEY_OP = {
+    "0000": ["Plain ASCII period", "t", 0x2e],
+    "0010": ["Backspace", "b"],
+    "0100": ["Digit One", "t", 0x31],
+    "0101": ["Digit Two", "t", 0x32],
+    "0102": ["Digit Three", "t", 0x33],
+    "0103": ["Digit Four", "t", 0x34],
+    "0104": ["Digit Five", "t", 0x35],
+    "0105": ["Digit Six", "t", 0x36],
+    "0106": ["Digit Seven", "t", 0x37],
+    "0107": ["Digit Eight", "t", 0x38],
+    "0108": ["Digit Nine", "t", 0x39],
+    "0109": ["Digit Zero", "t", 0x30],
+    "0110": ["Left double quote", "t", 0x201c],
+    "0111": ["Right double quote", "t", 0x201d],
+    "0200": ["Western final Y, high dot", "t", 0x18df],
+    "0201": ["Combining W-dot, eastern", "c", 0x140e],
+    "0202": ["Vowel E", "t", 0x1401],
+    "0203": ["Combining consonant R", "c", 0x154b],
+    "0204": ["Combining consonant T", "c", 0x1455],
+    "0205": ["Combining consonant Y", "c", 0x152d],
+    "0206": ["Combining W-dot, western", "c", 0x140f],
+    "0207": ["Vowel I", "t", 0x1403],
+    "0208": ["Vowel O", "t", 0x1405],
+    "0209": ["Combining consonant P", "c", 0x1438],
+    "0210": ["Medial L, full", "t", 0x14ec],
+    "0211": ["Medial R, full", "t", 0x1552],
+    "0300": ["Vowel A", "t", 0x140a],
+    "0301": ["Combining consonant S", "c", 0x14f4],
+    "0302": ["Western final T", "t", 0x141f],
+    "0303": ["Combining consonant SH", "c", 0x1515],
+    "0304": ["Western final K", "t", 0x1420],
+    "0305": ["Final H", "t", 0x1426],
+    "0306": ["Western final CH", "t", 0x1428],
+    "0307": ["Combining consonant K", "c", 0x1472],
+    "0308": ["Combining consonant L", "c", 0x14da],
+    "0309": ["Combining vowel length dot", "c", 0x1404],
+    "0310": ["Western final M", "t", 0x14bc],
+    "0311": ["Soft Hyphen (SHY)", "t", 0xad],
+    "0400": ["Western final S", "t", 0x1422],
+    "0401": ["Western final N", "t", 0x1423],
+    "0402": ["Combining consonant CH", "c", 0x1490],
+    "0403": ["Western final SH", "t", 0x1421],
+    "0404": ["Western final P", "t", 0x144a],
+    "0405": ["Combining consonant N", "c", 0x14c7],
+    "0406": ["Combining consonant M", "c", 0x14aa],
+    "0407": ["Comma", "t", 0x2c],
+    "0408": ["Syllabics full stop", "t", 0x166e],
+    "0409": ["Syllabics hyphen", "t", 0x1400],
+    "0410": ["Enter key", "t", 0xa],
+    "0501": ["Shift key", "w", 1],
+    "0503": ["Spacebar", "t", 0x20],
+    "0507": ["Alt key", "w", 2],
+    "0509": ["Help key", "h"],
+    
+    "1000": ["Horizontal ellipsis", "t", 0x2026],
+    "1010": ["Backspace", "b"],
+    "1100": ["Exclamation mark", "t", 0x21],
+    "1101": ["Plain ASCII quotation mark", "t", 0x22],
+    "1102": ["Number sign", "t", 0x23],
+    "1103": ["Dollar sign", "t", 0x24],
+    "1104": ["Percent sign", "t", 0x25],
+    "1105": ["Ampersand", "t", 0x26],
+    "1106": ["Slash", "t", 0x2f],
+    "1107": ["Left parenthesis", "t", 0x28],
+    "1108": ["Right parenthesis", "t", 0x29],
+    "1109": ["Equals sign", "t", 0x3d],
+    "1110": ["Question mark", "t", 0x3f],
+    "1111": ["At sign", "t", 0x40],
+    "1200": ["Western final Y, high plus", "t", 0x1429],
+    "1201": ["Final W", "t", 0x1424],
+    "1202": ["Asterisk", "t", 0x2a],
+    "1203": ["Final R", "t", 0x1550],
+    "1204": ["Eastern final T", "t", 0x1466],
+    "1205": ["Eastern final Y", "t", 0x153e],
+    "1206": ["Syllabics middle dot", "t", 0x1427],
+    "1207": ["Left square bracket", "t", 0x5b],
+    "1208": ["Right square bracket", "t", 0x5d],
+    "1209": ["Eastern final P", "t", 0x1449],
+    "1210": ["Medial L, raised", "t", 0x14eb],
+    "1211": ["Medial R, raised", "t", 0x1551],
+    "1300": ["Plus sign", "t", 0x2b],
+    "1301": ["Eastern final S", "t", 0x1505],
+    "1302": ["Backslash", "t", 0x5c],
+    "1303": ["Eastern final SH", "t", 0x1525],
+    "1304": ["Left curly bracket", "t", 0x7b],
+    "1305": ["Right curly bracket", "t", 0x7d],
+    "1306": ["Underscore", "t", 0x5f],
+    "1307": ["Eastern final K", "t", 0x1483],
+    "1308": ["Final L", "t", 0x14ea],
+    "1309": ["Horizontal bar / Quotation dash", "t", 0x2015],
+    "1310": ["Non-breaking space (NBSP)", "t", 0xa0],
+    "1311": ["Zero-width space (ZWSP)", "t", 0x200b],
+    "1400": ["Left double-angle quotation mark", "t", 0xab],
+    "1401": ["Right double-angle quotation mark", "t", 0xbb],
+    "1402": ["Eastern final CH", "t", 0x14a1],
+    "1403": ["Tilde", "t", 0x7e],
+    "1404": ["Vertical bar", "t", 0x7c],
+    "1405": ["Eastern final N", "t", 0x14d0],
+    "1406": ["Eastern final M", "t", 0x14bb],
+    "1407": ["Semicolon", "t", 0x3b],
+    "1408": ["Colon", "t", 0x3a],
+    "1409": ["Plain ASCII hyphen-minus", "t", 0x2d],
+    "1410": ["Enter key", "t", 0xa],
+    "1501": ["Shift key", "w", 0],
+    "1503": ["Spacebar", "t", 0x20],
+    "1507": ["Alt key", "w", 3],
+    "1509": ["Help key", "h"],
+    
+    "2000": ["Plain ASCII grave accent", "t", 0x60],
+    "2010": ["Backspace", "b"],
+    "2100": ["Polynesian ʻokina", "t", 0x2bb],
+    "2101": ["Combining grave accent diacritic", "d", 0x300],
+    "2102": ["Combining acute accent diacritic", "d", 0x301],
+    "2103": ["Combining circumflex diacritic", "d", 0x302],
+    "2104": ["Combining tilde diacritic", "d", 0x303],
+    "2105": ["Combining diaeresis/umlaut", "d", 0x308],
+    "2106": ["Combining cedilla diacritic", "d", 0x327],
+    "2107": ["Combining caron diacritic", "d", 0x30c],
+    "2108": ["Combining macron diacritic", "d", 0x304],
+    "2109": ["Combining breve diacritic", "d", 0x306],
+    "2110": ["German eszett", "t", 0xdf],
+    "2111": ["Lowercase L with stroke", "t", 0x142],
+    "2200": ["Lowercase Q", "t", 0x71],
+    "2201": ["Lowercase W", "t", 0x77],
+    "2202": ["Lowercase E", "t", 0x65],
+    "2203": ["Lowercase R", "t", 0x72],
+    "2204": ["Lowercase T", "t", 0x74],
+    "2205": ["Lowercase Y", "t", 0x79],
+    "2206": ["Lowercase U", "t", 0x75],
+    "2207": ["Lowercase I", "t", 0x69],
+    "2208": ["Lowercase O", "t", 0x6f],
+    "2209": ["Lowercase P", "t", 0x70],
+    "2210": ["Lowercase Icelandic Thorn", "t", 0xfe],
+    "2211": ["Lowercase Icelandic Eth", "t", 0xf0],
+    "2300": ["Lowercase A", "t", 0x61],
+    "2301": ["Lowercase S", "t", 0x73],
+    "2302": ["Lowercase D", "t", 0x64],
+    "2303": ["Lowercase F", "t", 0x66],
+    "2304": ["Lowercase G", "t", 0x67],
+    "2305": ["Lowercase H", "t", 0x68],
+    "2306": ["Lowercase J", "t", 0x6a],
+    "2307": ["Lowercase K", "t", 0x6b],
+    "2308": ["Lowercase L", "t", 0x6c],
+    "2309": ["Lowercase AE digraph", "t", 0xe6],
+    "2310": ["Lowercase OE digraph", "t", 0x153],
+    "2311": ["Lowercase O with stroke", "t", 0xf8],
+    "2400": ["Lowercase Z", "t", 0x7a],
+    "2401": ["Lowercase X", "t", 0x78],
+    "2402": ["Lowercase C", "t", 0x63],
+    "2403": ["Lowercase V", "t", 0x76],
+    "2404": ["Lowercase B", "t", 0x62],
+    "2405": ["Lowercase N", "t", 0x6e],
+    "2406": ["Lowercase M", "t", 0x6d],
+    "2407": ["Left single quote", "t", 0x2018],
+    "2408": ["Right single quote / Apostrophe", "t", 0x2019],
+    "2409": ["En dash", "t", 0x2013],
+    "2410": ["Enter key", "t", 0xa],
+    "2501": ["Shift key", "w", 3],
+    "2503": ["Spacebar", "t", 0x20],
+    "2507": ["Alt key", "w", 0],
+    "2509": ["Help key", "h"],
+    
+    "3000": ["Plain ASCII circumflex", "t", 0x5e],
+    "3010": ["Backspace", "b"],
+    "3100": ["Spanish inverted exclamation mark", "t", 0xa1],
+    "3101": ["Plain ASCII apostrophe", "t", 0x27],
+    "3102": ["Degree sign", "t", 0xb0],
+    "3103": ["Combining dot above", "d", 0x307],
+    "3104": ["Combining dot below", "d", 0x323],
+    "3105": ["Combining Hungarian double acute", "d", 0x30b],
+    "3106": ["Combining ogonek", "d", 0x328],
+    "3107": ["Less-than sign", "t", 0x3c],
+    "3108": ["Greater-than sign", "t", 0x3e],
+    "3109": ["Combining ring diacritic", "d", 0x30a],
+    "3110": ["Spanish inverted question mark", "t", 0xbf],
+    "3111": ["Uppercase L with stroke", "t", 0x141],
+    "3200": ["Uppercase Q", "t", 0x51],
+    "3201": ["Uppercase W", "t", 0x57],
+    "3202": ["Uppercase E", "t", 0x45],
+    "3203": ["Uppercase R", "t", 0x52],
+    "3204": ["Uppercase T", "t", 0x54],
+    "3205": ["Uppercase Y", "t", 0x59],
+    "3206": ["Uppercase U", "t", 0x55],
+    "3207": ["Uppercase I", "t", 0x49],
+    "3208": ["Uppercase O", "t", 0x4f],
+    "3209": ["Uppercase P", "t", 0x50],
+    "3210": ["Uppercase Icelandic Thorn", "t", 0xde],
+    "3211": ["Uppercase Icelandic Eth", "t", 0xd0],
+    "3300": ["Uppercase A", "t", 0x41],
+    "3301": ["Uppercase S", "t", 0x53],
+    "3302": ["Uppercase D", "t", 0x44],
+    "3303": ["Uppercase F", "t", 0x46],
+    "3304": ["Uppercase G", "t", 0x47],
+    "3305": ["Uppercase H", "t", 0x48],
+    "3306": ["Uppercase J", "t", 0x4a],
+    "3307": ["Uppercase K", "t", 0x4b],
+    "3308": ["Uppercase L", "t", 0x4c],
+    "3309": ["Uppercase AE digraph", "t", 0xc6],
+    "3310": ["Uppercase OE digraph", "t", 0x152],
+    "3311": ["Uppercase O with stroke", "t", 0xd8],
+    "3400": ["Uppercase Z", "t", 0x5a],
+    "3401": ["Uppercase X", "t", 0x58],
+    "3402": ["Uppercase C", "t", 0x43],
+    "3403": ["Uppercase V", "t", 0x56],
+    "3404": ["Uppercase B", "t", 0x42],
+    "3405": ["Uppercase N", "t", 0x4e],
+    "3406": ["Uppercase M", "t", 0x4d],
+    "3407": ["Left half angle quote", "t", 0x2039],
+    "3408": ["Right half angle quote", "t", 0x203a],
+    "3409": ["Em dash", "t", 0x2014],
+    "3410": ["Enter key", "t", 0xa],
+    "3501": ["Shift key", "w", 2],
+    "3503": ["Spacebar", "t", 0x20],
+    "3507": ["Alt key", "w", 1],
+    "3509": ["Help key", "h"]
+  };
+
+  /*
+   * Mapping of Latin diacritic-letter codepoints and standalone
+   * diacritics to decomposed strings.
+   *
+   * If the decomposed string begins with a space, then it must be
+   * exactly two codepoints and the second codepoint is one of the "d"
+   * combining codepoints defined in the VKEY_OP table.  In this case,
+   * the key is a string of a single codepoint which represents the
+   * diacritic by itself without any letter and not in combining form.
+   * In some cases, the key may be in ASCII range.
+   *
+   * Otherwise, the decomposed string begins with a Latin letter and is
+   * followed by a sequence of one or two "d" combining codepoints
+   * defined in the VKEY_OP table.  The Latin letter is not necessarily
+   * in Unicode range; for example, it might be the ae digraph
+   * codepoint.  When there are multiple combining codepoints, they are
+   * always sorted in ascending order of numeric codepoint value.
+   *
+   * A couple of special notes:
+   *
+   * (1) Caron diacritic may have multiple visual forms, with it
+   * sometimes rendered as an apostrophe next to the letter.
+   *
+   * (2) This table is copied from the T2 keyboard and includes records
+   * that aren't relevant for the Ojitype keyboard.  These records have
+   * combining codepoints that are not one of the "d" records, and they
+   * will be ignored.
+   */
+  var COMP_DICT = {
+    "^": " \u0302",
+    "`": " \u0300",
+    
+    "\u00a8": " \u0308",
+    "\u00af": " \u0304",
+    "\u00b4": " \u0301",
+    "\u00b8": " \u0327",
+    "\u00c0": "A\u0300",
+    "\u00c1": "A\u0301",
+    "\u00c2": "A\u0302",
+    "\u00c3": "A\u0303",
+    "\u00c4": "A\u0308",
+    "\u00c5": "A\u030a",
+    "\u00c7": "C\u0327",
+    "\u00c8": "E\u0300",
+    "\u00c9": "E\u0301",
+    "\u00ca": "E\u0302",
+    "\u00cb": "E\u0308",
+    "\u00cc": "I\u0300",
+    "\u00cd": "I\u0301",
+    "\u00ce": "I\u0302",
+    "\u00cf": "I\u0308",
+    "\u00d1": "N\u0303",
+    "\u00d2": "O\u0300",
+    "\u00d3": "O\u0301",
+    "\u00d4": "O\u0302",
+    "\u00d5": "O\u0303",
+    "\u00d6": "O\u0308",
+    "\u00d9": "U\u0300",
+    "\u00da": "U\u0301",
+    "\u00db": "U\u0302",
+    "\u00dc": "U\u0308",
+    "\u00dd": "Y\u0301",
+    "\u00e0": "a\u0300",
+    "\u00e1": "a\u0301",
+    "\u00e2": "a\u0302",
+    "\u00e3": "a\u0303",
+    "\u00e4": "a\u0308",
+    "\u00e5": "a\u030a",
+    "\u00e7": "c\u0327",
+    "\u00e8": "e\u0300",
+    "\u00e9": "e\u0301",
+    "\u00ea": "e\u0302",
+    "\u00eb": "e\u0308",
+    "\u00ec": "i\u0300",
+    "\u00ed": "i\u0301",
+    "\u00ee": "i\u0302",
+    "\u00ef": "i\u0308",
+    "\u00f1": "n\u0303",
+    "\u00f2": "o\u0300",
+    "\u00f3": "o\u0301",
+    "\u00f4": "o\u0302",
+    "\u00f5": "o\u0303",
+    "\u00f6": "o\u0308",
+    "\u00f9": "u\u0300",
+    "\u00fa": "u\u0301",
+    "\u00fb": "u\u0302",
+    "\u00fc": "u\u0308",
+    "\u00fd": "y\u0301",
+    "\u00ff": "y\u0308",
+    
+    "\u0100": "A\u0304",
+    "\u0101": "a\u0304",
+    "\u0102": "A\u0306",
+    "\u0103": "a\u0306",
+    "\u0104": "A\u0328",
+    "\u0105": "a\u0328",
+    "\u0106": "C\u0301",
+    "\u0107": "c\u0301",
+    "\u0108": "C\u0302",
+    "\u0109": "c\u0302",
+    "\u010a": "C\u0307",
+    "\u010b": "c\u0307",
+    "\u010c": "C\u030c",
+    "\u010d": "c\u030c",
+    "\u010e": "D\u030c",
+    "\u010f": "d\u030c",
+    "\u0110": "D\u0335",
+    "\u0111": "d\u0335",
+    "\u0112": "E\u0304",
+    "\u0113": "e\u0304",
+    "\u0114": "E\u0306",
+    "\u0115": "e\u0306",
+    "\u0116": "E\u0307",
+    "\u0117": "e\u0307",
+    "\u0118": "E\u0328",
+    "\u0119": "e\u0328",
+    "\u011a": "E\u030c",
+    "\u011b": "e\u030c",
+    "\u011c": "G\u0302",
+    "\u011d": "g\u0302",
+    "\u011e": "G\u0306",
+    "\u011f": "g\u0306",
+    "\u0120": "G\u0307",
+    "\u0121": "g\u0307",
+    "\u0122": "G\u0327",
+    "\u0123": "g\u0327",
+    "\u0124": "H\u0302",
+    "\u0125": "h\u0302",
+    "\u0126": "H\u0335",
+    "\u0127": "h\u0335",
+    "\u0128": "I\u0303",
+    "\u0129": "i\u0303",
+    "\u012a": "I\u0304",
+    "\u012b": "i\u0304",
+    "\u012c": "I\u0306",
+    "\u012d": "i\u0306",
+    "\u012e": "I\u0328",
+    "\u012f": "i\u0328",
+    "\u0130": "I\u0307",
+    "\u0134": "J\u0302",
+    "\u0135": "j\u0302",
+    "\u0136": "K\u0327",
+    "\u0137": "k\u0327",
+    "\u0139": "L\u0301",
+    "\u013a": "l\u0301",
+    "\u013b": "L\u0327",
+    "\u013c": "l\u0327",
+    "\u013d": "L\u030c",
+    "\u013e": "l\u030c",
+    "\u0143": "N\u0301",
+    "\u0144": "n\u0301",
+    "\u0145": "N\u0327",
+    "\u0146": "n\u0327",
+    "\u0147": "N\u030c",
+    "\u0148": "n\u030c",
+    "\u014c": "O\u0304",
+    "\u014d": "o\u0304",
+    "\u014e": "O\u0306",
+    "\u014f": "o\u0306",
+    "\u0150": "O\u030b",
+    "\u0151": "o\u030b",
+    "\u0154": "R\u0301",
+    "\u0155": "r\u0301",
+    "\u0156": "R\u0327",
+    "\u0157": "r\u0327",
+    "\u0158": "R\u030c",
+    "\u0159": "r\u030c",
+    "\u015a": "S\u0301",
+    "\u015b": "s\u0301",
+    "\u015c": "S\u0302",
+    "\u015d": "s\u0302",
+    "\u015e": "S\u0327",
+    "\u015f": "s\u0327",
+    "\u0160": "S\u030c",
+    "\u0161": "s\u030c",
+    "\u0162": "T\u0327",
+    "\u0163": "t\u0327",
+    "\u0164": "T\u030c",
+    "\u0165": "t\u030c",
+    "\u0166": "T\u0335",
+    "\u0167": "t\u0335",
+    "\u0168": "U\u0303",
+    "\u0169": "u\u0303",
+    "\u016a": "U\u0304",
+    "\u016b": "u\u0304",
+    "\u016c": "U\u0306",
+    "\u016d": "u\u0306",
+    "\u016e": "U\u030a",
+    "\u016f": "u\u030a",
+    "\u0170": "U\u030b",
+    "\u0171": "u\u030b",
+    "\u0172": "U\u0328",
+    "\u0173": "u\u0328",
+    "\u0174": "W\u0302",
+    "\u0175": "w\u0302",
+    "\u0176": "Y\u0302",
+    "\u0177": "y\u0302",
+    "\u0178": "Y\u0308",
+    "\u0179": "Z\u0301",
+    "\u017a": "z\u0301",
+    "\u017b": "Z\u0307",
+    "\u017c": "z\u0307",
+    "\u017d": "Z\u030c",
+    "\u017e": "z\u030c",
+    
+    "\u0180": "b\u0335",
+    "\u0181": "B\u0309",
+    "\u0187": "C\u0309",
+    "\u0188": "c\u0309",
+    "\u018a": "D\u0309",
+    "\u0191": "F\u0309",
+    "\u0192": "f\u0309",
+    "\u0193": "G\u0309",
+    "\u0197": "I\u0335",
+    "\u0198": "K\u0309",
+    "\u0199": "k\u0309",
+    "\u019a": "l\u0335",
+    "\u019f": "O\u0335",
+    "\u01a0": "O\u031b",
+    "\u01a1": "o\u031b",
+    "\u01a4": "P\u0309",
+    "\u01a5": "p\u0309",
+    "\u01ac": "T\u0309",
+    "\u01ad": "t\u0309",
+    "\u01af": "U\u031b",
+    "\u01b0": "u\u031b",
+    "\u01b2": "V\u0309",
+    "\u01b5": "Z\u0335",
+    "\u01b6": "z\u0335",
+    "\u01cd": "A\u030c",
+    "\u01ce": "a\u030c",
+    "\u01cf": "I\u030c",
+    "\u01d0": "i\u030c",
+    "\u01d1": "O\u030c",
+    "\u01d2": "o\u030c",
+    "\u01d3": "U\u030c",
+    "\u01d4": "u\u030c",
+    "\u01d5": "U\u0304\u0308",
+    "\u01d6": "u\u0304\u0308",
+    "\u01d7": "U\u0301\u0308",
+    "\u01d8": "u\u0301\u0308",
+    "\u01d9": "U\u0308\u030c",
+    "\u01da": "u\u0308\u030c",
+    "\u01db": "U\u0300\u0308",
+    "\u01dc": "u\u0300\u0308",
+    "\u01de": "A\u0304\u0308",
+    "\u01df": "a\u0304\u0308",
+    "\u01e0": "A\u0304\u0307",
+    "\u01e1": "a\u0304\u0307",
+    "\u01e2": "\u00c6\u0304",
+    "\u01e3": "\u00e6\u0304",
+    "\u01e4": "G\u0335",
+    "\u01e5": "g\u0335",
+    "\u01e6": "G\u030c",
+    "\u01e7": "g\u030c",
+    "\u01e8": "K\u030c",
+    "\u01e9": "k\u030c",
+    "\u01ea": "O\u0328",
+    "\u01eb": "o\u0328",
+    "\u01ec": "O\u0304\u0328",
+    "\u01ed": "o\u0304\u0328",
+    "\u01f0": "j\u030c",
+    "\u01f4": "G\u0301",
+    "\u01f5": "g\u0301",
+    "\u01f8": "N\u0300",
+    "\u01f9": "n\u0300",
+    "\u01fa": "A\u0301\u030a",
+    "\u01fb": "a\u0301\u030a",
+    "\u01fc": "\u00c6\u0301",
+    "\u01fd": "\u00e6\u0301",
+    "\u01fe": "\u00d8\u0301",
+    "\u01ff": "\u00f8\u0301",
+    "\u0218": "S\u0326",
+    "\u0219": "s\u0326",
+    "\u021a": "T\u0326",
+    "\u021b": "t\u0326",
+    "\u021e": "H\u030c",
+    "\u021f": "h\u030c",
+    "\u0224": "Z\u0309",
+    "\u0225": "z\u0309",
+    "\u0226": "A\u0307",
+    "\u0227": "a\u0307",
+    "\u0228": "E\u0327",
+    "\u0229": "e\u0327",
+    "\u022a": "O\u0304\u0308",
+    "\u022b": "o\u0304\u0308",
+    "\u022c": "O\u0303\u0304",
+    "\u022d": "o\u0303\u0304",
+    "\u022e": "O\u0307",
+    "\u022f": "o\u0307",
+    "\u0230": "O\u0304\u0307",
+    "\u0231": "o\u0304\u0307",
+    "\u0232": "Y\u0304",
+    "\u0233": "y\u0304",
+    "\u023a": "A\u0335",
+    "\u023b": "C\u0335",
+    "\u023c": "c\u0335",
+    "\u023d": "L\u0335",
+    "\u0243": "B\u0335",
+    "\u0244": "U\u0335",
+    "\u0246": "E\u0335",
+    "\u0247": "e\u0335",
+    "\u0248": "J\u0335",
+    "\u0249": "j\u0335",
+    "\u024c": "R\u0335",
+    "\u024d": "r\u0335",
+    "\u024e": "Y\u0335",
+    "\u024f": "y\u0335",
+    
+    "\u0253": "b\u0309",
+    "\u0257": "d\u0309",
+    "\u025a": "\u0259\u0309",
+    "\u0260": "g\u0309",
+    "\u0266": "h\u0309",
+    "\u0268": "i\u0335",
+    "\u0271": "m\u0309",
+    "\u0275": "o\u0335",
+    "\u0282": "s\u0309",
+    "\u0289": "u\u0335",
+    "\u028b": "v\u0309",
+    "\u02a0": "q\u0309",
+    
+    "\u02c0": " \u0309",
+    "\u02c7": " \u030c",
+    "\u02d8": " \u0306",
+    "\u02d9": " \u0307",
+    "\u02da": " \u030a",
+    "\u02db": " \u0328",
+    "\u02dc": " \u0303",
+    "\u02dd": " \u030b",
+    
+    "\u1d7d": "p\u0335",
+    
+    "\u1e02": "B\u0307",
+    "\u1e03": "b\u0307",
+    "\u1e04": "B\u0323",
+    "\u1e05": "b\u0323",
+    "\u1e08": "C\u0301\u0327",
+    "\u1e09": "c\u0301\u0327",
+    "\u1e0a": "D\u0307",
+    "\u1e0b": "d\u0307",
+    "\u1e0c": "D\u0323",
+    "\u1e0d": "d\u0323",
+    "\u1e10": "D\u0327",
+    "\u1e11": "d\u0327",
+    "\u1e14": "E\u0300\u0304",
+    "\u1e15": "e\u0300\u0304",
+    "\u1e16": "E\u0301\u0304",
+    "\u1e17": "e\u0301\u0304",
+    "\u1e1c": "E\u0306\u0327",
+    "\u1e1d": "e\u0306\u0327",
+    "\u1e1e": "F\u0307",
+    "\u1e1f": "f\u0307",
+    "\u1e20": "G\u0304",
+    "\u1e21": "g\u0304",
+    "\u1e22": "H\u0307",
+    "\u1e23": "h\u0307",
+    "\u1e24": "H\u0323",
+    "\u1e25": "h\u0323",
+    "\u1e26": "H\u0328",
+    "\u1e27": "h\u0328",
+    "\u1e28": "H\u0327",
+    "\u1e29": "h\u0327",
+    "\u1e2e": "I\u0301\u0308",
+    "\u1e2f": "i\u0301\u0308",
+    "\u1e30": "K\u0301",
+    "\u1e31": "k\u0301",
+    "\u1e32": "K\u0323",
+    "\u1e33": "k\u0323",
+    "\u1e36": "L\u0323",
+    "\u1e37": "l\u0323",
+    "\u1e38": "L\u0304\u0323",
+    "\u1e39": "l\u0304\u0323",
+    "\u1e3e": "M\u0301",
+    "\u1e3f": "m\u0301",
+    "\u1e40": "M\u0307",
+    "\u1e41": "m\u0307",
+    "\u1e42": "M\u0323",
+    "\u1e43": "m\u0323",
+    "\u1e44": "N\u0307",
+    "\u1e45": "n\u0307",
+    "\u1e46": "N\u0323",
+    "\u1e47": "n\u0323",
+    "\u1e4c": "O\u0301\u0303",
+    "\u1e4d": "o\u0301\u0303",
+    "\u1e4e": "O\u0303\u0308",
+    "\u1e4f": "o\u0303\u0308",
+    "\u1e50": "O\u0300\u0304",
+    "\u1e51": "o\u0300\u0304",
+    "\u1e52": "O\u0301\u0304",
+    "\u1e53": "o\u0301\u0304",
+    "\u1e54": "P\u0301",
+    "\u1e55": "p\u0301",
+    "\u1e56": "P\u0307",
+    "\u1e57": "p\u0307",
+    "\u1e58": "R\u0307",
+    "\u1e59": "r\u0307",
+    "\u1e5a": "R\u0323",
+    "\u1e5b": "r\u0323",
+    "\u1e5c": "R\u0304\u0323",
+    "\u1e5d": "r\u0304\u0323",
+    "\u1e60": "S\u0307",
+    "\u1e61": "s\u0307",
+    "\u1e62": "S\u0323",
+    "\u1e63": "s\u0323",
+    "\u1e64": "S\u0301\u0307",
+    "\u1e65": "s\u0301\u0307",
+    "\u1e66": "S\u0307\u030c",
+    "\u1e67": "s\u0307\u030c",
+    "\u1e68": "S\u0307\u0323",
+    "\u1e69": "s\u0307\u0323",
+    "\u1e6a": "T\u0307",
+    "\u1e6b": "t\u0307",
+    "\u1e6c": "T\u0323",
+    "\u1e6d": "t\u0323",
+    "\u1e78": "U\u0301\u0303",
+    "\u1e79": "u\u0301\u0303",
+    "\u1e7c": "V\u0303",
+    "\u1e7d": "v\u0303",
+    "\u1e7e": "V\u0323",
+    "\u1e7f": "v\u0323",
+    "\u1e80": "W\u0300",
+    "\u1e81": "w\u0300",
+    "\u1e82": "W\u0301",
+    "\u1e83": "w\u0301",
+    "\u1e84": "W\u0308",
+    "\u1e85": "w\u0308",
+    "\u1e86": "W\u0307",
+    "\u1e87": "w\u0307",
+    "\u1e88": "W\u0323",
+    "\u1e89": "w\u0323",
+    "\u1e8a": "X\u0307",
+    "\u1e8b": "x\u0307",
+    "\u1e8c": "X\u0308",
+    "\u1e8d": "x\u0308",
+    "\u1e8e": "Y\u0307",
+    "\u1e8f": "y\u0307",
+    "\u1e90": "Z\u0302",
+    "\u1e91": "z\u0302",
+    "\u1e92": "Z\u0323",
+    "\u1e93": "z\u0323",
+    "\u1e97": "t\u0308",
+    "\u1e98": "w\u030a",
+    "\u1e99": "y\u030a",
+    "\u1e9b": "\u017f\u0307",
+    "\u1ea0": "A\u0323",
+    "\u1ea1": "a\u0323",
+    "\u1ea2": "A\u0309",
+    "\u1ea3": "a\u0309",
+    "\u1ea4": "A\u0301\u0302",
+    "\u1ea5": "a\u0301\u0302",
+    "\u1ea6": "A\u0300\u0302",
+    "\u1ea7": "a\u0300\u0302",
+    "\u1ea8": "A\u0302\u0309",
+    "\u1ea9": "a\u0302\u0309",
+    "\u1eaa": "A\u0302\u0303",
+    "\u1eab": "a\u0302\u0303",
+    "\u1eac": "A\u0302\u0323",
+    "\u1ead": "a\u0302\u0323",
+    "\u1eae": "A\u0301\u0306",
+    "\u1eaf": "a\u0301\u0306",
+    "\u1eb0": "A\u0300\u0306",
+    "\u1eb1": "a\u0300\u0306",
+    "\u1eb2": "A\u0306\u0309",
+    "\u1eb3": "a\u0306\u0309",
+    "\u1eb4": "A\u0303\u0306",
+    "\u1eb5": "a\u0303\u0306",
+    "\u1eb6": "A\u0306\u0323",
+    "\u1eb7": "a\u0306\u0323",
+    "\u1eb8": "E\u0323",
+    "\u1eb9": "e\u0323",
+    "\u1eba": "E\u0309",
+    "\u1ebb": "e\u0309",
+    "\u1ebc": "E\u0303",
+    "\u1ebd": "e\u0303",
+    "\u1ebe": "E\u0301\u0302",
+    "\u1ebf": "e\u0301\u0302",
+    "\u1ec0": "E\u0300\u0302",
+    "\u1ec1": "e\u0300\u0302",
+    "\u1ec2": "E\u0302\u0309",
+    "\u1ec3": "e\u0302\u0309",
+    "\u1ec4": "E\u0302\u0303",
+    "\u1ec5": "e\u0302\u0303",
+    "\u1ec6": "E\u0302\u0323",
+    "\u1ec7": "e\u0302\u0323",
+    "\u1ec8": "I\u0309",
+    "\u1ec9": "i\u0309",
+    "\u1eca": "I\u0323",
+    "\u1ecb": "i\u0323",
+    "\u1ecc": "O\u0323",
+    "\u1ecd": "o\u0323",
+    "\u1ece": "O\u0309",
+    "\u1ecf": "o\u0309",
+    "\u1ed0": "O\u0301\u0302",
+    "\u1ed1": "o\u0301\u0302",
+    "\u1ed2": "O\u0300\u0302",
+    "\u1ed3": "o\u0300\u0302",
+    "\u1ed4": "O\u0302\u0309",
+    "\u1ed5": "o\u0302\u0309",
+    "\u1ed6": "O\u0302\u0303",
+    "\u1ed7": "o\u0302\u0303",
+    "\u1ed8": "O\u0302\u0323",
+    "\u1ed9": "o\u0302\u0323",
+    "\u1eda": "O\u0301\u031b",
+    "\u1edb": "o\u0301\u031b",
+    "\u1edc": "O\u0300\u031b",
+    "\u1edd": "o\u0300\u031b",
+    "\u1ede": "O\u0309\u031b",
+    "\u1edf": "o\u0309\u031b",
+    "\u1ee0": "O\u0303\u031b",
+    "\u1ee1": "o\u0303\u031b",
+    "\u1ee2": "O\u031b\u0323",
+    "\u1ee3": "o\u031b\u0323",
+    "\u1ee4": "U\u0323",
+    "\u1ee5": "u\u0323",
+    "\u1ee6": "U\u0309",
+    "\u1ee7": "u\u0309",
+    "\u1ee8": "U\u0301\u031b",
+    "\u1ee9": "u\u0301\u031b",
+    "\u1eea": "U\u0300\u031b",
+    "\u1eeb": "u\u0300\u031b",
+    "\u1eec": "U\u0309\u031b",
+    "\u1eed": "u\u0309\u031b",
+    "\u1eee": "U\u0303\u031b",
+    "\u1eef": "u\u0303\u031b",
+    "\u1ef0": "U\u031b\u0323",
+    "\u1ef1": "u\u031b\u0323",
+    "\u1ef2": "Y\u0300",
+    "\u1ef3": "y\u0300",
+    "\u1ef4": "Y\u0323",
+    "\u1ef5": "y\u0323",
+    "\u1ef6": "Y\u0309",
+    "\u1ef7": "y\u0309",
+    "\u1ef8": "Y\u0303",
+    "\u1ef9": "y\u0303",
+    
+    "\u2c63": "P\u0335",
+    "\u2c65": "a\u0335"
+  };
+
+  /*
+   * Mapping of each of the "d" combining codes to the string that
+   * should be displayed for them in the keyboard screens.
+   */
+  var EXAMPLE_COMP = {
+    "\u0302": "Circumflex",
+    "\u0301": "Acute",
+    "\u0300": "Grave",
+    "\u0307": "Dot-above",
+    "\u030c": "Caron",
+    "\u0308": "Diaeresis",
+    "\u0304": "Macron",
+    "\u030b": "Double-acute",
+    "\u0306": "Breve",
+    "\u0303": "Tilde",
+    "\u030a": "Ring",
+    "\u0327": "Cedilla",
+    "\u0328": "Ogonek",
+    "\u0323": "Dot-below"
+  };
+  
+  /*
+   * String storing all the combining codepoints that appear somewhere
+   * as "d" records in VKEY_OP.
+   */
+  var COMP_CHAR = makeCompList(VKEY_OP);
+  
+  /*
+   * Inverse mapping from COMP_DICT.
+   *
+   * This turns all the keys of COMP_DICT into values and all the values
+   * into keys.
+   */
+  var LOOKUP_DICT = makeLookupDict(COMP_DICT, COMP_CHAR);
+
+  /*
+   * Mapping of key codes to their position on the virtual keyboard.
+   *
+   * The values are exactly three decimal digits, where the first
+   * decimal digit is the row on the keyboard and the last two decimal
+   * digits are the column on the keyboard.  These three digits match
+   * the last three digits of the key values in the VKEY_OP map.
+   *
+   * The following keys of the virtual keyboard are NOT present as
+   * values in this mapping:
+   *
+   *   - Backspace (010)
+   *   - Enter (410)
+   *   - Shift (501)
+   *   - Alt (507)
+   *   - Help (509)
+   *
+   * Some additional notes:
+   *
+   *   (1) The backslash key is moved to the end of the next row on the
+   *       virtual keyboard layout so that the rows have the same number
+   *       of keys.
+   */
+  var KEY_MAP = {
+    "Backquote"     : "000",
+    
+    "Digit1"        : "100",
+    "Digit2"        : "101",
+    "Digit3"        : "102",
+    "Digit4"        : "103",
+    "Digit5"        : "104",
+    "Digit6"        : "105",
+    "Digit7"        : "106",
+    "Digit8"        : "107",
+    "Digit9"        : "108",
+    "Digit0"        : "109",
+    "Minus"         : "110",
+    "Equal"         : "111",
+    
+    "KeyQ"          : "200",
+    "KeyW"          : "201",
+    "KeyE"          : "202",
+    "KeyR"          : "203",
+    "KeyT"          : "204",
+    "KeyY"          : "205",
+    "KeyU"          : "206",
+    "KeyI"          : "207",
+    "KeyO"          : "208",
+    "KeyP"          : "209",
+    "BracketLeft"   : "210",
+    "BracketRight"  : "211",
+    "Backslash"     : "311",
+    
+    "KeyA"          : "300",
+    "KeyS"          : "301",
+    "KeyD"          : "302",
+    "KeyF"          : "303",
+    "KeyG"          : "304",
+    "KeyH"          : "305",
+    "KeyJ"          : "306",
+    "KeyK"          : "307",
+    "KeyL"          : "308",
+    "Semicolon"     : "309",
+    "Quote"         : "310",
+    
+    "KeyZ"          : "400",
+    "KeyX"          : "401",
+    "KeyC"          : "402",
+    "KeyV"          : "403",
+    "KeyB"          : "404",
+    "KeyN"          : "405",
+    "KeyM"          : "406",
+    "Comma"         : "407",
+    "Period"        : "408",
+    "Slash"         : "409",
+
+    "Space"         : "503"
+  };
+
+  /*
+   * String containing all the "hard finals."
+   *
+   * Hard finals are full finals that may be composed into syllables.
+   */
+  var HARD_FINALS =
+    "\u1455\u152d\u1438\u14f4\u1515\u1472\u1490\u14c7\u14aa";
+  
+  /*
+   * String containing all the plain vowels.
+   */
+  var VOWELS = "\u1401\u1403\u1405\u140a";
+
+  /*
+   * Mapping of consonant entities to their eastern final equivalents.
+   */
+  var ENTITY_TO_FINAL = {
+    "\u1455": "\u1466",
+    "\u152d": "\u153e",
+    "\u1438": "\u1449",
+    "\u14f4": "\u1505",
+    "\u1515": "\u1525",
+    "\u1472": "\u1483",
+    "\u1490": "\u14a1",
+    "\u14c7": "\u14d0",
+    "\u14aa": "\u14bb"
+  };
+
+  /*
+   * The syllabics composition table, which maps syllabics entity
+   * sequences to their result strings.
+   *
+   * This is generated automatically with the buildtable.pl script.
+   *
+   * Within the entity sequences, codepoints are sorted in ascending
+   * numerical order.
+   */
+  var SYL_TABLE = {
+    "ᐄᐊ": "ᐋ",
+    "ᐃᐄ": "ᐄ",
+    "ᐄᐅ": "ᐆ",
+    "ᐊᐎ": "ᐗ",
+    "ᐁᐎ": "ᐌ",
+    "ᐃᐎ": "ᐎ",
+    "ᐅᐎ": "ᐒ",
+    "ᐄᐊᐎ": "ᐙ",
+    "ᐃᐄᐎ": "ᐐ",
+    "ᐄᐅᐎ": "ᐔ",
+    "ᐊᐏ": "ᐘ",
+    "ᐁᐏ": "ᐍ",
+    "ᐃᐏ": "ᐏ",
+    "ᐅᐏ": "ᐓ",
+    "ᐄᐊᐏ": "ᐚ",
+    "ᐃᐄᐏ": "ᐑ",
+    "ᐄᐅᐏ": "ᐕ",
+    "ᐊᐸ": "ᐸ",
+    "ᐁᐸ": "ᐯ",
+    "ᐃᐸ": "ᐱ",
+    "ᐅᐸ": "ᐳ",
+    "ᐄᐊᐸ": "ᐹ",
+    "ᐃᐄᐸ": "ᐲ",
+    "ᐄᐅᐸ": "ᐴ",
+    "ᐊᐎᐸ": "ᑄ",
+    "ᐁᐎᐸ": "ᐺ",
+    "ᐃᐎᐸ": "ᐼ",
+    "ᐅᐎᐸ": "ᑀ",
+    "ᐄᐊᐎᐸ": "ᑆ",
+    "ᐃᐄᐎᐸ": "ᐾ",
+    "ᐄᐅᐎᐸ": "ᑂ",
+    "ᐊᐏᐸ": "ᑅ",
+    "ᐁᐏᐸ": "ᐻ",
+    "ᐃᐏᐸ": "ᐽ",
+    "ᐅᐏᐸ": "ᑁ",
+    "ᐄᐊᐏᐸ": "ᑇ",
+    "ᐃᐄᐏᐸ": "ᐿ",
+    "ᐄᐅᐏᐸ": "ᑃ",
+    "ᐊᑕ": "ᑕ",
+    "ᐁᑕ": "ᑌ",
+    "ᐃᑕ": "ᑎ",
+    "ᐅᑕ": "ᑐ",
+    "ᐄᐊᑕ": "ᑖ",
+    "ᐃᐄᑕ": "ᑏ",
+    "ᐄᐅᑕ": "ᑑ",
+    "ᐊᐎᑕ": "ᑡ",
+    "ᐁᐎᑕ": "ᑗ",
+    "ᐃᐎᑕ": "ᑙ",
+    "ᐅᐎᑕ": "ᑝ",
+    "ᐄᐊᐎᑕ": "ᑣ",
+    "ᐃᐄᐎᑕ": "ᑛ",
+    "ᐄᐅᐎᑕ": "ᑟ",
+    "ᐊᐏᑕ": "ᑢ",
+    "ᐁᐏᑕ": "ᑘ",
+    "ᐃᐏᑕ": "ᑚ",
+    "ᐅᐏᑕ": "ᑞ",
+    "ᐄᐊᐏᑕ": "ᑤ",
+    "ᐃᐄᐏᑕ": "ᑜ",
+    "ᐄᐅᐏᑕ": "ᑠ",
+    "ᐊᒐ": "ᒐ",
+    "ᐁᒐ": "ᒉ",
+    "ᐃᒐ": "ᒋ",
+    "ᐅᒐ": "ᒍ",
+    "ᐄᐊᒐ": "ᒑ",
+    "ᐃᐄᒐ": "ᒌ",
+    "ᐄᐅᒐ": "ᒎ",
+    "ᐊᐎᒐ": "ᒜ",
+    "ᐁᐎᒐ": "ᒒ",
+    "ᐃᐎᒐ": "ᒔ",
+    "ᐅᐎᒐ": "ᒘ",
+    "ᐄᐊᐎᒐ": "ᒞ",
+    "ᐃᐄᐎᒐ": "ᒖ",
+    "ᐄᐅᐎᒐ": "ᒚ",
+    "ᐊᐏᒐ": "ᒝ",
+    "ᐁᐏᒐ": "ᒓ",
+    "ᐃᐏᒐ": "ᒕ",
+    "ᐅᐏᒐ": "ᒙ",
+    "ᐄᐊᐏᒐ": "ᒟ",
+    "ᐃᐄᐏᒐ": "ᒗ",
+    "ᐄᐅᐏᒐ": "ᒛ",
+    "ᐊᑲ": "ᑲ",
+    "ᐁᑲ": "ᑫ",
+    "ᐃᑲ": "ᑭ",
+    "ᐅᑲ": "ᑯ",
+    "ᐄᐊᑲ": "ᑳ",
+    "ᐃᐄᑲ": "ᑮ",
+    "ᐄᐅᑲ": "ᑰ",
+    "ᐊᐎᑲ": "ᑾ",
+    "ᐁᐎᑲ": "ᑴ",
+    "ᐃᐎᑲ": "ᑶ",
+    "ᐅᐎᑲ": "ᑺ",
+    "ᐄᐊᐎᑲ": "ᒀ",
+    "ᐃᐄᐎᑲ": "ᑸ",
+    "ᐄᐅᐎᑲ": "ᑼ",
+    "ᐊᐏᑲ": "ᑿ",
+    "ᐁᐏᑲ": "ᑵ",
+    "ᐃᐏᑲ": "ᑷ",
+    "ᐅᐏᑲ": "ᑻ",
+    "ᐄᐊᐏᑲ": "ᒁ",
+    "ᐃᐄᐏᑲ": "ᑹ",
+    "ᐄᐅᐏᑲ": "ᑽ",
+    "ᐊᒪ": "ᒪ",
+    "ᐁᒪ": "ᒣ",
+    "ᐃᒪ": "ᒥ",
+    "ᐅᒪ": "ᒧ",
+    "ᐄᐊᒪ": "ᒫ",
+    "ᐃᐄᒪ": "ᒦ",
+    "ᐄᐅᒪ": "ᒨ",
+    "ᐊᐎᒪ": "ᒶ",
+    "ᐁᐎᒪ": "ᒬ",
+    "ᐃᐎᒪ": "ᒮ",
+    "ᐅᐎᒪ": "ᒲ",
+    "ᐄᐊᐎᒪ": "ᒸ",
+    "ᐃᐄᐎᒪ": "ᒰ",
+    "ᐄᐅᐎᒪ": "ᒴ",
+    "ᐊᐏᒪ": "ᒷ",
+    "ᐁᐏᒪ": "ᒭ",
+    "ᐃᐏᒪ": "ᒯ",
+    "ᐅᐏᒪ": "ᒳ",
+    "ᐄᐊᐏᒪ": "ᒹ",
+    "ᐃᐄᐏᒪ": "ᒱ",
+    "ᐄᐅᐏᒪ": "ᒵ",
+    "ᐊᓇ": "ᓇ",
+    "ᐁᓇ": "ᓀ",
+    "ᐃᓇ": "ᓂ",
+    "ᐅᓇ": "ᓄ",
+    "ᐄᐊᓇ": "ᓈ",
+    "ᐃᐄᓇ": "ᓃ",
+    "ᐄᐅᓇ": "ᓅ",
+    "ᐊᐎᓇ": "ᓋ",
+    "ᐁᐎᓇ": "ᓉ",
+    "ᐃᐎᓇ": "ᣆ",
+    "ᐅᐎᓇ": "ᣊ",
+    "ᐄᐊᐎᓇ": "ᓍ",
+    "ᐃᐄᐎᓇ": "ᣈ",
+    "ᐄᐅᐎᓇ": "ᣌ",
+    "ᐊᐏᓇ": "ᓌ",
+    "ᐁᐏᓇ": "ᓊ",
+    "ᐃᐏᓇ": "ᣇ",
+    "ᐅᐏᓇ": "ᣋ",
+    "ᐄᐊᐏᓇ": "ᓎ",
+    "ᐃᐄᐏᓇ": "ᣉ",
+    "ᐄᐅᐏᓇ": "ᣍ",
+    "ᐊᓴ": "ᓴ",
+    "ᐁᓴ": "ᓭ",
+    "ᐃᓴ": "ᓯ",
+    "ᐅᓴ": "ᓱ",
+    "ᐄᐊᓴ": "ᓵ",
+    "ᐃᐄᓴ": "ᓰ",
+    "ᐄᐅᓴ": "ᓲ",
+    "ᐊᐎᓴ": "ᔀ",
+    "ᐁᐎᓴ": "ᓶ",
+    "ᐃᐎᓴ": "ᓸ",
+    "ᐅᐎᓴ": "ᓼ",
+    "ᐄᐊᐎᓴ": "ᔂ",
+    "ᐃᐄᐎᓴ": "ᓺ",
+    "ᐄᐅᐎᓴ": "ᓾ",
+    "ᐊᐏᓴ": "ᔁ",
+    "ᐁᐏᓴ": "ᓷ",
+    "ᐃᐏᓴ": "ᓹ",
+    "ᐅᐏᓴ": "ᓽ",
+    "ᐄᐊᐏᓴ": "ᔃ",
+    "ᐃᐄᐏᓴ": "ᓻ",
+    "ᐄᐅᐏᓴ": "ᓿ",
+    "ᐊᔕ": "ᔕ",
+    "ᐁᔕ": "ᔐ",
+    "ᐃᔕ": "ᔑ",
+    "ᐅᔕ": "ᔓ",
+    "ᐄᐊᔕ": "ᔖ",
+    "ᐃᐄᔕ": "ᔒ",
+    "ᐄᐅᔕ": "ᔔ",
+    "ᐊᐎᔕ": "ᔡ",
+    "ᐁᐎᔕ": "ᔗ",
+    "ᐃᐎᔕ": "ᔙ",
+    "ᐅᐎᔕ": "ᔝ",
+    "ᐄᐊᐎᔕ": "ᔣ",
+    "ᐃᐄᐎᔕ": "ᔛ",
+    "ᐄᐅᐎᔕ": "ᔟ",
+    "ᐊᐏᔕ": "ᔢ",
+    "ᐁᐏᔕ": "ᔘ",
+    "ᐃᐏᔕ": "ᔚ",
+    "ᐅᐏᔕ": "ᔞ",
+    "ᐄᐊᐏᔕ": "ᔤ",
+    "ᐃᐄᐏᔕ": "ᔜ",
+    "ᐄᐅᐏᔕ": "ᔠ",
+    "ᐊᔭ": "ᔭ",
+    "ᐁᔭ": "ᔦ",
+    "ᐃᔭ": "ᔨ",
+    "ᐅᔭ": "ᔪ",
+    "ᐄᐊᔭ": "ᔮ",
+    "ᐃᐄᔭ": "ᔩ",
+    "ᐄᐅᔭ": "ᔫ",
+    "ᐊᐎᔭ": "ᔹ",
+    "ᐁᐎᔭ": "ᔯ",
+    "ᐃᐎᔭ": "ᔱ",
+    "ᐅᐎᔭ": "ᔵ",
+    "ᐄᐊᐎᔭ": "ᔻ",
+    "ᐃᐄᐎᔭ": "ᔳ",
+    "ᐄᐅᐎᔭ": "ᔷ",
+    "ᐊᐏᔭ": "ᔺ",
+    "ᐁᐏᔭ": "ᔰ",
+    "ᐃᐏᔭ": "ᔲ",
+    "ᐅᐏᔭ": "ᔶ",
+    "ᐄᐊᐏᔭ": "ᔼ",
+    "ᐃᐄᐏᔭ": "ᔴ",
+    "ᐄᐅᐏᔭ": "ᔸ",
+    "ᐊᓚ": "ᓚ",
+    "ᐁᓚ": "ᓓ",
+    "ᐃᓚ": "ᓕ",
+    "ᐅᓚ": "ᓗ",
+    "ᐄᐊᓚ": "ᓛ",
+    "ᐃᐄᓚ": "ᓖ",
+    "ᐄᐅᓚ": "ᓘ",
+    "ᐊᐎᓚ": "ᓦ",
+    "ᐁᐎᓚ": "ᓜ",
+    "ᐃᐎᓚ": "ᓞ",
+    "ᐅᐎᓚ": "ᓢ",
+    "ᐄᐊᐎᓚ": "ᓨ",
+    "ᐃᐄᐎᓚ": "ᓠ",
+    "ᐄᐅᐎᓚ": "ᓤ",
+    "ᐊᐏᓚ": "ᓧ",
+    "ᐁᐏᓚ": "ᓝ",
+    "ᐃᐏᓚ": "ᓟ",
+    "ᐅᐏᓚ": "ᓣ",
+    "ᐄᐊᐏᓚ": "ᓩ",
+    "ᐃᐄᐏᓚ": "ᓡ",
+    "ᐄᐅᐏᓚ": "ᓥ",
+    "ᐊᕋ": "ᕋ",
+    "ᐁᕋ": "ᕃ",
+    "ᐃᕋ": "ᕆ",
+    "ᐅᕋ": "ᕈ",
+    "ᐄᐊᕋ": "ᕌ",
+    "ᐃᐄᕋ": "ᕇ",
+    "ᐄᐅᕋ": "ᕉ",
+    "ᐊᐎᕋ": "ᣓ",
+    "ᐁᐎᕋ": "ᣎ",
+    "ᐃᐎᕋ": "ᣏ",
+    "ᐅᐎᕋ": "ᣑ",
+    "ᐄᐊᐎᕋ": "ᕎ",
+    "ᐃᐄᐎᕋ": "ᣐ",
+    "ᐄᐅᐎᕋ": "ᣒ",
+    "ᐁᐏᕋ": "ᣠ",
+    "ᐄᐊᐏᕋ": "ᕏ"
+  };
+
+  /*
+   * Local data
+   * ==========
+   */
+  
+  /*
+   * The currently selected virtual keyboard.
+   *
+   * This is an integer 0-3.
+   */
+  var m_vkey_keyb = 0;
+  
+  /*
+   * The composition buffer for the virtual keyboard.
+   *
+   * When combining keys are pressed, they are added to this buffer.
+   * The next typing character that is pressed will add all these
+   * combining characters to get the full result and then the buffer
+   * will be cleared.
+   *
+   * When the virtual backspace key is pressed, if the composition
+   * buffer is not empty then it is cleared.  Otherwise, the virtual
+   * backspace key attempts to delete the previous character.
+   *
+   * When the first composition character is added to this buffer, there
+   * is immediately either a prefix "C" for syllabics composition or "D"
+   * for roman diacritic that is inserted before the first composition
+   * character.  This determines whether the buffer is currently being
+   * used for a syllabics composition or a roman diacritic composition.
+   */
+  var m_vkey_comp = "";
+  
+  /*
+   * Flag that is true when help mode is active on the virtual keyboard.
+   *
+   * When help mode is active, then whichever key is pressed next will
+   * have no effect other than to display the name of the key and clear
+   * the help flag.
+   */
+  var m_vkey_help = false;
+  
+  /*
+   * Flag that is true when a descriptive help message of a key is
+   * currently being displayed on the keyboard screen.
+   */
+  var m_vkey_helped = false;
+
+  /*
+   * The composition buffer for the system keyboard.
+   *
+   * When the first composition character is added to this buffer, there
+   * is immediately either a prefix "C" for syllabics composition or "D"
+   * for roman diacritic that is inserted before the first composition
+   * character.  This determines whether the buffer is currently being
+   * used for a syllabics composition or a roman diacritic composition.
+   */
+  var m_key_cbuf = "";
+
+  /*
+   * Local functions
+   * ===============
+   */
+
+  /*
+   * Given a string, perform all necessary HTML entity escaping.
+   *
+   * This is for HTML code, not for attribute values.
+   *
+   * Parameters:
+   *
+   *   str : string - the unescaped string
+   *
+   * Return:
+   *
+   *   the escaped string
+   */
+  function escHTML(str) {
+    var func_name = "escHTML";
+    
+    // Check parameter
+    if (typeof(str) !== "string") {
+      fault(func_name, 100);
+    }
+    
+    // Escape ampersand first
+    str = str.replace(/&/g, "&amp;");
+    
+    // Escape angle brackets
+    str = str.replace(/</g, "&lt;");
+    str = str.replace(/>/g, "&gt;");
+    
+    // Return escaped string
+    return str;
+  }
+  
+  /*
+   * Given a character that is being typed c and the current state of a
+   * composition buffer buf, figure out the composed result, or empty
+   * string if couldn't compose successfully.
+   *
+   * Parameters:
+   *
+   *   c : string - the character being typed
+   *
+   *   buf : string - the composition buffer
+   *
+   * Return:
+   *
+   *   the composed character string, or empty string if error
+   */
+  function composeSymbol(c, buf) {
+    var func_name = "composeSymbol";
+    var ca, j;
+    
+    // Check parameters
+    if ((typeof(c) !== "string") || (typeof(buf) !== "string")) {
+      fault(func_name, 100);
+    }
+    
+    // If the buffer is empty, then just return c as-is
+    if (buf.length < 1) {
+      return c;
+    }
+    
+    // Buffer has contents, so decide how to proceed based on the first
+    // character, which is C for syllabics composition or D for roman
+    // composition
+    if (buf.charAt(0) === "C") { // ====================================
+      // Syllabics composition, start by dropping the buffer prefix
+      buf = buf.slice(1);
+      if (buf.length < 1) {
+        fault(func_name, 700);
+      }
+      
+      // Suffix contents of composition buffer to character
+      c = c + buf;
+      
+      // Get an array of all codepoints
+      ca = [];
+      for(j = 0; j < c.length; j++) {
+        ca.push(c.charCodeAt(j));
+      }
+      
+      // Sort codepoints in numeric order
+      ca.sort(function(a, b) {
+        return a - b;
+      });
+      
+      // Blank the string and rebuild it with all codepoints in numeric
+      // order, dropping duplicates
+      c = "";
+      for(j = 0; j < ca.length; j++) {
+        if ((j === 0) || (ca[j] > ca[j - 1])) {
+          c = c + String.fromCharCode(ca[j]);
+        }
+      }
+      
+      // If sequence not found in syllable table, return failure
+      if (!(c in SYL_TABLE)) {
+        return "";
+      }
+      
+      // Return result from syllable table
+      return SYL_TABLE[c];
+    
+    } else if (buf.charAt(0) === "D") { // =============================
+      // Roman composition, start by dropping the buffer prefix
+      buf = buf.slice(1);
+      if (buf.length < 1) {
+        fault(func_name, 800);
+      }
+      
+      // If c is NBSP or THSP, replace it with normal space
+      if ((c === "\u00a0") || (c === "\u2009")) {
+        c = " ";
+      }
+
+      // If c is a key in COMP_DICT whose value does not begin with a
+      // space, then replace it with its decomposed value
+      if ((c in COMP_DICT) && ((COMP_DICT[c]).charAt(0) !== " ")) {
+        c = COMP_DICT[c];
+      }
+      
+      // Suffix contents of composition buffer to character
+      c = c + buf;
+      
+      // Get an array of all combining codes
+      ca = [];
+      for(j = 1; j < c.length; j++) {
+        ca.push(c.charCodeAt(j));
+      }
+      
+      // Sort combining codes in numeric order
+      ca.sort(function(a, b) {
+        return a - b;
+      });
+      
+      // Strip combining codes from the string
+      c = c.charAt(0);
+      
+      // Add the sorted combining codes, dropping any duplicates
+      for(j = 0; j < ca.length; j++) {
+        if ((j === 0) || (ca[j] > ca[j - 1])) {
+          c = c + String.fromCharCode(ca[j]);
+        }
+      }
+      
+      // If sequence not found in lookup table, return failure
+      if (!(c in LOOKUP_DICT)) {
+        return "";
+      }
+      
+      // Return result from lookup
+      return LOOKUP_DICT[c];
+    
+    } else { // ========================================================
+      // Unrecognized composition buffer state
+      fault(func_name, 900);
+    }
+  }
+  
+  /*
+   * Event handler for when a key is pressed on the input control.
+   */
+  function handleKey(e) {
+    var func_name = "handleKey";
+    var vl, vs, sr, kr, kc, op, i, j;
+
+    // If this keyboard event is for Shift key, CapsLock, Alt or Alt-Gr, 
+    // then ignore it completely since those are typing state keys and
+    // let default processing occur
+    if ((e.code === "ShiftLeft") || (e.code === "ShiftRight") ||
+        (e.code === "CapsLock") || 
+        (e.code === "AltLeft") || (e.code === "AltRight")) {
+      return;
+    }
+    
+    // Check whether Ctrl, Meta, or OS modifier keys are active; if they
+    // are, then clear keyboard state and allow default processing to
+    // occur so that system shortcuts can work
+    if (e.getModifierState("Control") ||
+        e.getModifierState("Meta") ||
+        e.getModifierState("OS")) {
+      m_key_cbuf = "";
+      return;
+    }
+    
+    // If this is the backspace or delete key AND the keyboard state is
+    // anything other than its initial, cleared state, then just reset
+    // the keyboard state and prevent any further processing of the key
+    if ((e.code === "Delete") || (e.code === "Backspace")) {
+      if (m_key_cbuf.length > 0) {
+        m_key_cbuf = "";
+        e.preventDefault();
+        return;
+      }
+    }
+    
+    // Check whether the keycode is recognized in our virtual keyboard
+    // map; if it is not, then clear keyboard state and allow default
+    // processing to occur
+    if (!(e.code in KEY_MAP)) {
+      m_key_cbuf = "";
+      return;
+    }
+    
+    // If we got here, then we have a virtual keyboard press that we are
+    // going to handle ourselves, so suppress default behavior
+    e.preventDefault();
+    
+    // Get the location of this key on the virtual keyboard, and get the
+    // numeric row and column
+    vl = KEY_MAP[e.code];
+    kr = parseInt(vl.charAt(0), 10);
+    kc = parseInt(vl.slice(1) , 10);
+    
+    // From the state, figure out the virtual keyboard index we would be
+    // located on if this were the virtual keyboard, excluding for the
+    // moment the Shift state
+    if (e.getModifierState("AltGraph") || e.getModifierState("Alt")) {
+      // Alt or AltGr pressed, so when excluding Shift, we are on
+      // keyboard #2
+      vs = 2;
+    
+    } else {
+      // Alt(Gr) not pressed, so when excluding Shift, we are on
+      // keyboard #0
+      vs = 0;
+    }
+    
+    // We need to figure out whether to increment keyboard index to
+    // shifted state
+    if (vs === 0) {
+      // Shifted state starts out false
+      sr = false;
+      
+      // If Shift key is pressed, invert the shifted state; for
+      // syllabics we ignore caps lock entirely since there is no
+      // concept of capital letters
+      if (e.getModifierState("Shift")) {
+        sr = true;
+      }
+      
+      // If shifted state, increment keyboard number
+      if (sr) {
+        vs++;
+      }
+    
+    } else if (vs === 2) {
+      // Shifted state starts out false
+      sr = false;
+      
+      // If virtual location is on one of the roman letters, then
+      // CapsLock state will effect shifted state; else, CapsLock state
+      // is ignored
+      if (((kr === 1) && (kc === 11)) ||
+          (kr === 2) || (kr === 3) ||
+          ((kr === 4) && (kc < 7))) {
+        if (e.getModifierState("CapsLock")) {
+          sr = true;
+        }
+      }
+      
+      // If Shift key is pressed, invert the shifted state
+      if (e.getModifierState("Shift")) {
+        if (sr) {
+          sr = false;
+        } else {
+          sr = true;
+        }
+      }
+      
+      // If shifted state, increment keyboard number
+      if (sr) {
+        vs++;
+      }
+    }
+    
+    // Form the full virtual location code
+    vl = vs.toString(10) + vl;
+    
+    // If the virtual location code is not recognized in VKEY_OP, then
+    // clear keyboard state and go no further
+    if (!(vl in VKEY_OP)) {
+      m_key_cbuf = "";
+      return;
+    }
+    
+    // Get the virtual operation for this key
+    op = VKEY_OP[vl];
+    
+    // Handle the virtual operation
+    if (op[1] === "t") { // ============================================
+      // Type a character, so get the parameter indicating the codepoint
+      // of the character to type
+      if (op.length !== 3) {
+        fault(func_name, 500);
+      }
+      
+      i = op[2];
+      if (typeof(i) !== "number") {
+        fault(func_name, 501);
+      }
+      if (Math.floor(i) !== i) {
+        fault(func_name, 502);
+      }
+      if (!((i >= 0) && (i <= 0xffff))) {
+        fault(func_name, 503);
+      }
+      
+      // Convert character to a string
+      i = String.fromCharCode(i);
+      
+      // Compose the character if necessary and then clear the
+      // composition buffer
+      i = composeSymbol(i, m_key_cbuf);
+      m_key_cbuf = "";
+      
+      // Type the character if successfully composed
+      if (i.length > 0) {
+        typeString(i);
+      }
+      
+    } else if ((op[1] === "c") || (op[1] === "d")) { // ================
+      // Combining character, so get the parameter indicating the
+      // codepoint of the combining character
+      if (op.length !== 3) {
+        fault(func_name, 600);
+      }
+      
+      i = op[2];
+      if (typeof(i) !== "number") {
+        fault(func_name, 601);
+      }
+      if (Math.floor(i) !== i) {
+        fault(func_name, 602);
+      }
+      if (!((i >= 0) && (i <= 0xffff))) {
+        fault(func_name, 603);
+      }
+      
+      // Figure out the prefix character
+      if (op[1] === "c") {
+        j = "C";
+      } else if (op[1] === "d") {
+        j = "D";
+      } else {
+        fault(func_name, 610);
+      }
+      
+      // If composition buffer is currently empty, start it out with the
+      // correct prefix
+      if (m_key_cbuf.length < 1) {
+        m_key_cbuf = j;
+      }
+      
+      // If first character of composition buffer is not the correct
+      // prefix, then clear composition buffer and do nothing further
+      if (m_key_cbuf.charAt(0) !== j) {
+        m_key_cbuf = "";
+        return;
+      }
+      
+      // Add to composition buffer
+      m_key_cbuf = m_key_cbuf + String.fromCharCode(i);
+      
+    } else { // ========================================================
+      // With all the special cases we've handled so far, this operation
+      // should be either "t" or "c" style, so we shouldn't get here
+      fault(func_name, 900);
+    }
+  }
+  
+  /*
+   * Update all the keyboard screens according to the current state of
+   * the composition buffer.
+   */
+  function showStatusScreen() {
+    var func_name = "showStatusScreen";
+    var msg, i, c, e;
+    
+    // Build the message
+    msg = "";
+    if (m_vkey_comp.length > 0) {
+      if (m_vkey_comp.charAt(0) === "D") {
+        // Roman diacritics
+        for(i = 1; i < m_vkey_comp.length; i++) {
+          // Get current combining character and check it is recognized
+          c = m_vkey_comp.charAt(i);
+          if (!(c in EXAMPLE_COMP)) {
+            fault(func_name, 100);
+          }
+          
+          // If three combining codes already, just add "+..." and
+          // finish loop
+          if (i >= 4) {
+            msg = msg + "+\u2026";
+            break;
+          }
+          
+          // If not first combining code, prefix a + sign
+          if (i > 1) {
+            msg = msg + "+";
+          }
+          
+          // Add this combining code
+          msg = msg + EXAMPLE_COMP[c];
+        }
+      
+      } else if (m_vkey_comp.charAt(0) === "C") {
+        // Syllabics composition -- show the result with adding an A
+        // vowel to it
+        msg = composeSymbol("\u140a", m_vkey_comp);
+      
+      } else {
+        fault(func_name, 199);
+      }
+    }
+    
+    // Escape message for HTML
+    msg = escHTML(msg);
+    
+    // Update each screen
+    for(i = 0; i < VKEY_SCRS.length; i++) {
+      // Get current screen
+      e = document.getElementById(VKEY_SCRS[i]);
+      if (!e) {
+        fault(func_name, 200);
+      }
+      
+      // Update display
+      e.innerHTML = msg;
+    }
+    
+    // Update helped flag
+    m_vkey_helped = false;
+  }
+  
+  /*
+   * Function invoked to update the keyboard screens to show the help
+   * message.
+   *
+   * Parameters:
+   *
+   *   msg : string - the help message to display
+   */
+  function showHelpMessage(msg) {
+    var func_name = "showHelpMessage";
+    var i, e;
+    
+    // Check parameter
+    if (typeof(msg) !== "string") {
+      fault(func_name, 100);
+    }
+    
+    // Escape the message for HTML
+    msg = escHTML(msg);
+    
+    // Update each screen
+    for(i = 0; i < VKEY_SCRS.length; i++) {
+      // Get current screen
+      e = document.getElementById(VKEY_SCRS[i]);
+      if (!e) {
+        fault(func_name, 200);
+      }
+      
+      // Update display
+      e.innerHTML = msg;
+    }
+    
+    // Update helped flag
+    m_vkey_helped = true;
+  }
+  
+  /*
+   * Make sure the correct keyboard is displayed according to the state
+   * variable m_vkey_keyb.
+   */
+  function updateKeyboard() {
+    var func_name = "updateKeyboard";
+    var i, e;
+    
+    // Hide all keyboards
+    for(i = 0; i < VKEY_DIVS.length; i++) {
+      e = document.getElementById(VKEY_DIVS[i]);
+      if (!e) {
+        fault(func_name, 100);
+      }
+      e.style.display = "none";
+    }
+    
+    // Show the desired keyboard
+    e = document.getElementById(VKEY_DIVS[m_vkey_keyb]);
+    if (!e) {
+      fault(func_name, 200);
+    }
+    e.style.display = "block";
+  }
+  
+  /*
+   * Event handler for when the mouse button is pressed down on one of
+   * the keys of the virtual keyboard.
+   */
+  function handleVkey(e) {
+    var func_name = "handleVkey";
+    var kix, op, i, j, e;
+
+    // Ignore call if target element has no ID
+    if (!("id" in e.target)) {
+      return;
+    }
+    if (typeof(e.target.id) !== "string") {
+      return;
+    }
+
+    // Ignore call if ID of target element is not in proper format
+    if (!((/^keyb[0-9]{4}$/).test(e.target.id))) {
+      return;
+    }
+    
+    // If we got here, then target has ID in proper format, so last four
+    // characters in the ID are the key index
+    kix = e.target.id.slice(-4);
+
+    // Get the operation array
+    if (!(kix in VKEY_OP)) {
+      fault(func_name, 100);
+    }
+
+    op = VKEY_OP[kix];
+    if ((!(typeof(op) === "object")) || (!(op instanceof Array))) {
+      fault(func_name, 101);
+    }
+    if (op.length < 2) {
+      fault(func_name, 102);
+    }
+
+    // If we are in help mode, then update display to show name of key,
+    // clear help flag, and do nothing further
+    if (m_vkey_help) {
+      // Show the help screen
+      showHelpMessage(op[0]);
+     
+      // Clear help flag and finish
+      m_vkey_help = false;
+      return;
+    }
+    
+    // Not in help mode, so interpret the operation
+    if (op[1] === "t") { // ============================================
+      // Type a character, so get the parameter indicating the codepoint
+      // of the character to type
+      if (op.length !== 3) {
+        fault(func_name, 500);
+      }
+      
+      i = op[2];
+      if (typeof(i) !== "number") {
+        fault(func_name, 501);
+      }
+      if (Math.floor(i) !== i) {
+        fault(func_name, 502);
+      }
+      if (!((i >= 0) && (i <= 0xffff))) {
+        fault(func_name, 503);
+      }
+      
+      // Convert character to a string
+      i = String.fromCharCode(i);
+      
+      // Compose the symbol if necessary and clear the composition
+      // buffer
+      i = composeSymbol(i, m_vkey_comp);
+      m_vkey_comp = "";
+      
+      // If composition error, show error message and switch back to
+      // main keyboard
+      if (i.length < 1) {
+        showHelpMessage("Invalid key sequence!");
+        m_vkey_keyb = 0;
+        updateKeyboard();
+        return;
+      }
+      
+      // Type the character, update status display, and switch to main
+      // keyboard
+      typeString(i);
+      showStatusScreen();
+      m_vkey_keyb = 0;
+      updateKeyboard();
+      
+    } else if ((op[1] === "c") || (op[1] === "d")) { // ================
+      // Combining character, so get the parameter indicating the
+      // codepoint of the combining character
+      if (op.length !== 3) {
+        fault(func_name, 600);
+      }
+      
+      i = op[2];
+      if (typeof(i) !== "number") {
+        fault(func_name, 601);
+      }
+      if (Math.floor(i) !== i) {
+        fault(func_name, 602);
+      }
+      if (!((i >= 0) && (i <= 0xffff))) {
+        fault(func_name, 603);
+      }
+      
+      // Figure out the prefix character
+      if (op[1] === "c") {
+        j = "C";
+      } else if (op[1] === "d") {
+        j = "D";
+      } else {
+        fault(func_name, 610);
+      }
+      
+      // If composition buffer is currently empty, start it out with the
+      // correct prefix
+      if (m_vkey_comp.length < 1) {
+        m_vkey_comp = j;
+      }
+      
+      // If first character of composition buffer is not the correct
+      // prefix, then clear composition buffer and do nothing further
+      if (m_vkey_comp.charAt(0) !== j) {
+        m_vkey_comp = "";
+        return;
+      }
+      
+      // Add to composition buffer, update status display, and switch to
+      // main keyboard
+      m_vkey_comp = m_vkey_comp + String.fromCharCode(i);
+      showStatusScreen();
+      m_vkey_keyb = 0;
+      updateKeyboard();
+      
+    } else if (op[1] === "h") { // =====================================
+      // Activate help mode and update screen   
+      m_vkey_help = true;
+      showHelpMessage("Choose a key...");
+      
+    } else if (op[1] === "b") { // =====================================
+      // Backspace depends on whether there is a help message,  buffered
+      // composition keys, or neither condition
+      if (m_vkey_helped) {
+        // Some kind of help message is being displayed, so update
+        // status to clear the help message and do nothing further
+        showStatusScreen();
+      
+      } else if (m_vkey_comp.length > 0) {
+        // No help message, but buffered composition keys, so just clear
+        // the buffer and update the display
+        m_vkey_comp = "";
+        showStatusScreen();
+        
+      } else {
+        // Nothing buffered, so update display and then attempt a
+        // backspace operation
+        showStatusScreen();
+        typeBackspace();
+      }
+      
+    } else if (op[1] === "w") { // =====================================
+      // Warp to a different keyboard, so first get the parameter
+      // indicating the desired keyboard index and check it
+      if (op.length !== 3) {
+        fault(func_name, 800);
+      }
+      
+      i = op[2];
+      if (typeof(i) !== "number") {
+        fault(func_name, 801);
+      }
+      if (Math.floor(i) !== i) {
+        fault(func_name, 802);
+      }
+      if (!((i >= 0) && (i <= 3))) {
+        fault(func_name, 803);
+      }
+      
+      // Do nothing if we already are on the desired keyboard
+      if (i === m_vkey_keyb) {
+        return;
+      }
+      
+      // Update keyboard switch state and update display
+      m_vkey_keyb = i;
+      updateKeyboard();
+      showStatusScreen();
+      
+    } else { // ========================================================
+      fault(func_name, 900);
+    }
+  }
+
+  /*
+   * Simulate pressing backspace on the input box.
+   */
+  function typeBackspace() {
+    var func_name = "typeBackspace";
+    var eInput;
+    
+    // Get the textarea control on the form
+    eInput = document.getElementById("txtInput");
+    if (!eInput) {
+      fault(func_name, 101);
+    }
+    
+    // If selectionEnd is greater than selectionStart, then we just want
+    // to delete that
+    if (eInput.selectionEnd > eInput.selectionStart) {
+      eInput.setRangeText(
+        "",
+        eInput.selectionStart,
+        eInput.selectionEnd,
+        "end");
+      return;
+    }
+    
+    // If we got here, nothing is selected; if selectionStart is not at
+    // beginning, simulate a regular backspace
+    if (eInput.selectionStart > 0) {
+      eInput.setRangeText(
+        "",
+        eInput.selectionStart - 1,
+        eInput.selectionEnd,
+        "end");
+    }
+  }
+
+  /*
+   * Given a string, add it to the input box at the current position.
+   *
+   * If the given string is empty, this call is ignored.
+   *
+   * Parameters:
+   *
+   *   str : string - string to add to input box
+   */
+  function typeString(str) {
+    var func_name = "typeString";
+    var eInput;
+    
+    // Check parameter
+    if (typeof(str) !== "string") {
+      fault(func_name, 100);
+    }
+    
+    // If string is empty, ignore this function call
+    if (str.length < 1) {
+      return;
+    }
+
+    // Get the textarea control on the form
+    eInput = document.getElementById("txtInput");
+    if (!eInput) {
+      fault(func_name, 101);
+    }
+    
+    // Insert text at current position in text area and update position
+    // to after the text that was just inserted
+    eInput.setRangeText(
+      str,
+      eInput.selectionStart,
+      eInput.selectionEnd,
+      "end");
+  }
+
+  /*
+   * Public functions
+   * ================
+   */
+
+  /*
+   * Function invoked when the clipboard copy button is clicked.
+   *
+   * The text currently in the input box is copied to the system
+   * clipboard.
+   */
+  function handleCopy() {
+    var func_name = "handleCopy";
+    var e, str;
+    
+    // Get the current text from the text area
+    e = document.getElementById("txtInput");
+    if (!e) {
+      fault(func_name, 200);
+    }
+    str = e.value;
+    
+    // Asynchronously copy to the clipboard
+    navigator.clipboard.writeText(str);
+  }
+
+  /*
+   * Function invoked once the DOM has been loaded and is ready for
+   * scripting.
+   */
+  function handleLoad() {
+    var func_name = "handleLoad";
+    var eInput, eTDs, eTD, x;
+    
+    // Install our keypress handler on the text area
+    eInput = document.getElementById("txtInput");
+    if (!eInput) {
+      fault(func_name, 100);
+    }
+    eInput.addEventListener('keydown', handleKey);
+    
+    // Connect all of the virtual keyboard keys in the display table to
+    // event handlers
+    eTDs = document.getElementsByTagName("td");
+    for(x = 0; x < eTDs.length; x++) {
+      // Get current TD element
+      eTD = eTDs[x];
+      
+      // Ignore if no id attribute
+      if (!("id" in eTD)) {
+        continue;
+      }
+      if (typeof(eTD.id) !== "string") {
+        continue;
+      }
+      
+      // Ignore if ID of TD is not in correct format
+      if (!((/^keyb[0-9]{4}$/).test(eTD.id))) {
+        continue;
+      }
+      
+      // If we got here, then eTD is an element we need to connect to
+      // typeString through an event handler
+      eTD.addEventListener('mousedown', handleVkey);
+    }
+  }
+
+  /*
+   * Export declarations
+   * ===================
+   * 
+   * All exports are declared within a global "ojitype" object.
+   */
+  
+  window.ojitype = {
+    "handleCopy": handleCopy,
+    "handleLoad": handleLoad
+  };  
+
+}());
+
+// Call into our load handler once DOM is ready
+document.addEventListener('DOMContentLoaded', ojitype.handleLoad);
+
+    </script>
+  </head>
+  <body>
+    <h1>Ojitype</h1>
+    <div id="divKeyboardMain" class="clsKeyDiv">
+      <table>
+        <tr>
+          <td id="keyb0000" class="punc">.</td>
+          <td id="keybscr0" class="screen" colspan="9">&nbsp;</td>
+          <td id="keyb0010" class="notch" colspan="2">&#x21d0;</td>
+        </tr>
+        <tr>
+          <td id="keyb0100">1</td>
+          <td id="keyb0101">2</td>
+          <td id="keyb0102">3</td>
+          <td id="keyb0103">4</td>
+          <td id="keyb0104">5</td>
+          <td id="keyb0105">6</td>
+          <td id="keyb0106">7</td>
+          <td id="keyb0107">8</td>
+          <td id="keyb0108">9</td>
+          <td id="keyb0109">0</td>
+          <td id="keyb0110" class="punc">&#x201c;</td>
+          <td id="keyb0111" class="punc">&#x201d;</td>
+        </tr>
+        <tr>
+          <td id="keyb0200">&#x18df;</td>
+          <td id="keyb0201" class="mod">&#x140e;</td>
+          <td id="keyb0202">&#x1401;</td>
+          <td id="keyb0203" class="comb">&#x154b;</td>
+          <td id="keyb0204" class="comb">&#x1455;</td>
+          <td id="keyb0205" class="comb">&#x152d;</td>
+          <td id="keyb0206" class="mod">&#x140f;</td>
+          <td id="keyb0207">&#x1403;</td>
+          <td id="keyb0208">&#x1405;</td>
+          <td id="keyb0209" class="comb">&#x1438;</td>
+          <td id="keyb0210">&#x14ec;</td>
+          <td id="keyb0211">&#x1552;</td>
+        </tr>
+        <tr>
+          <td id="keyb0300">&#x140a;</td>
+          <td id="keyb0301" class="comb">&#x14f4;</td>
+          <td id="keyb0302">&#x141f;</td>
+          <td id="keyb0303" class="comb">&#x1515;</td>
+          <td id="keyb0304">&#x1420;</td>
+          <td id="keyb0305">&#x1426;</td>
+          <td id="keyb0306">&#x1428;</td>
+          <td id="keyb0307" class="comb">&#x1472;</td>
+          <td id="keyb0308" class="comb">&#x14da;</td>
+          <td id="keyb0309" class="mod">&#x1404;</td>
+          <td id="keyb0310" class="spec">&#x14bc;</td>
+          <td id="keyb0311" class="ghost">-</td>
+        </tr>
+        <tr>
+          <td id="keyb0400">&#x1422;</td>
+          <td id="keyb0401">&#x1423;</td>
+          <td id="keyb0402" class="comb">&#x1490;</td>
+          <td id="keyb0403">&#x1421;</td>
+          <td id="keyb0404">&#x144a;</td>
+          <td id="keyb0405" class="comb">&#x14c7;</td>
+          <td id="keyb0406" class="comb">&#x14aa;</td>
+          <td id="keyb0407" class="punc">,</td>
+          <td id="keyb0408" class="spec">&#x166e;</td>
+          <td id="keyb0409" class="spec">&#x1400;</td>
+          <td
+            id="keyb0410"
+            class="notch"
+            colspan="2"
+            rowspan="2">&#x23ce;</td>
+        </tr>
+        <tr>
+          <td class="blank">&nbsp;</td>
+          <td id="keyb0501" colspan="2" class="mod">&#x21e7;</td>
+          <td id="keyb0503" colspan="4" class="notch">&nbsp;</td>
+          <td id="keyb0507" colspan="2" class="mod">Alt</td>
+          <td id="keyb0509" class="spec">i</td>
+        </tr>
+      </table>
+    </div>
+    <div
+        id="divKeyboardShifted"
+        class="clsKeyDiv"
+        style="display: none;">
+      <table>
+        <tr>
+          <td id="keyb1000" class="punc">&#x2026;</td>
+          <td id="keybscr1" class="screen" colspan="9">&nbsp;</td>
+          <td id="keyb1010" class="notch" colspan="2">&#x21d0;</td>
+        </tr>
+        <tr>
+          <td id="keyb1100" class="punc">!</td>
+          <td id="keyb1101" class="punc">"</td>
+          <td id="keyb1102" class="punc">#</td>
+          <td id="keyb1103" class="punc">$</td>
+          <td id="keyb1104" class="punc">%</td>
+          <td id="keyb1105" class="punc">&amp;</td>
+          <td id="keyb1106" class="punc">/</td>
+          <td id="keyb1107" class="punc">(</td>
+          <td id="keyb1108" class="punc">)</td>
+          <td id="keyb1109" class="punc">=</td>
+          <td id="keyb1110" class="punc">?</td>
+          <td id="keyb1111" class="punc">@</td>
+        </tr>
+        <tr>
+          <td id="keyb1200">&#x1429;</td>
+          <td id="keyb1201">&#x1424;</td>
+          <td id="keyb1202" class="punc">*</td>
+          <td id="keyb1203">&#x1550;</td>
+          <td id="keyb1204">&#x1466;</td>
+          <td id="keyb1205">&#x153e;</td>
+          <td id="keyb1206" class="spec">&#x1427;</td>
+          <td id="keyb1207" class="punc">[</td>
+          <td id="keyb1208" class="punc">]</td>
+          <td id="keyb1209">&#x1449;</td>
+          <td id="keyb1210">&#x14eb;</td>
+          <td id="keyb1211">&#x1551;</td>
+        </tr>
+        <tr>
+          <td id="keyb1300" class="punc">+</td>
+          <td id="keyb1301">&#x1505;</td>
+          <td id="keyb1302" class="punc">\</td>
+          <td id="keyb1303">&#x1525;</td>
+          <td id="keyb1304" class="punc">{</td>
+          <td id="keyb1305" class="punc">}</td>
+          <td id="keyb1306" class="punc">_</td>
+          <td id="keyb1307">&#x1483;</td>
+          <td id="keyb1308">&#x14ea;</td>
+          <td id="keyb1309" class="punc">&#x2015;</td>
+          <td id="keyb1310" class="ghost">_</td>
+          <td id="keyb1311" class="ghost">|</td>
+        </tr>
+        <tr>
+          <td id="keyb1400" class="punc">&laquo;</td>
+          <td id="keyb1401" class="punc">&raquo;</td>
+          <td id="keyb1402">&#x14a1;</td>
+          <td id="keyb1403" class="punc">~</td>
+          <td id="keyb1404" class="punc">|</td>
+          <td id="keyb1405">&#x14d0;</td>
+          <td id="keyb1406">&#x14bb;</td>
+          <td id="keyb1407" class="punc">;</td>
+          <td id="keyb1408" class="punc">:</td>
+          <td id="keyb1409" class="punc">-</td>
+          <td
+            id="keyb1410"
+            class="notch"
+            colspan="2"
+            rowspan="2">&#x23ce;</td>
+        </tr>
+        <tr>
+          <td class="blank">&nbsp;</td>
+          <td id="keyb1501" colspan="2" class="shifted">&#x21e7;</td>
+          <td id="keyb1503" colspan="4" class="notch">&nbsp;</td>
+          <td id="keyb1507" colspan="2" class="mod">Alt</td>
+          <td id="keyb1509" class="spec">i</td>
+        </tr>
+      </table>
+    </div>
+    <div
+        id="divKeyboardRoman"
+        class="clsKeyDiv"
+        style="display: none;">
+      <table>
+        <tr>
+          <td id="keyb2000" class="punc">`</td>
+          <td id="keybscr2" class="screen" colspan="9">&nbsp;</td>
+          <td id="keyb2010" class="notch" colspan="2">&#x21d0;</td>
+        </tr>
+        <tr>
+          <td id="keyb2100">&#x2bb;</td>
+          <td id="keyb2101" class="comb">&#xf2;</td>
+          <td id="keyb2102" class="comb">&#xf3;</td>
+          <td id="keyb2103" class="comb">&#xf4;</td>
+          <td id="keyb2104" class="comb">&#xf5;</td>
+          <td id="keyb2105" class="comb">&#xf6;</td>
+          <td id="keyb2106" class="comb">&#xe7;</td>
+          <td id="keyb2107" class="comb">&#x161;</td>
+          <td id="keyb2108" class="comb">&#x14d;</td>
+          <td id="keyb2109" class="comb">&#x14f;</td>
+          <td id="keyb2110">ß</td>
+          <td id="keyb2111">&#x142;</td>
+        </tr>
+        <tr>
+          <td id="keyb2200">q</td>
+          <td id="keyb2201">w</td>
+          <td id="keyb2202">e</td>
+          <td id="keyb2203">r</td>
+          <td id="keyb2204">t</td>
+          <td id="keyb2205">y</td>
+          <td id="keyb2206">u</td>
+          <td id="keyb2207">i</td>
+          <td id="keyb2208">o</td>
+          <td id="keyb2209">p</td>
+          <td id="keyb2210">&#xfe;</td>
+          <td id="keyb2211">&#xf0;</td>
+        </tr>
+        <tr>
+          <td id="keyb2300">a</td>
+          <td id="keyb2301">s</td>
+          <td id="keyb2302">d</td>
+          <td id="keyb2303">f</td>
+          <td id="keyb2304">g</td>
+          <td id="keyb2305">h</td>
+          <td id="keyb2306">j</td>
+          <td id="keyb2307">k</td>
+          <td id="keyb2308">l</td>
+          <td id="keyb2309">&#xe6;</td>
+          <td id="keyb2310">&#x153;</td>
+          <td id="keyb2311">&#xf8;</td>
+        </tr>
+        <tr>
+          <td id="keyb2400">z</td>
+          <td id="keyb2401">x</td>
+          <td id="keyb2402">c</td>
+          <td id="keyb2403">v</td>
+          <td id="keyb2404">b</td>
+          <td id="keyb2405">n</td>
+          <td id="keyb2406">m</td>
+          <td id="keyb2407" class="punc">&#x2018;</td>
+          <td id="keyb2408" class="punc">&#x2019;</td>
+          <td id="keyb2409" class="punc">&#x2013;</td>
+          <td
+            id="keyb2410"
+            class="notch"
+            colspan="2"
+            rowspan="2">&#x23ce;</td>
+        </tr>
+        <tr>
+          <td class="blank">&nbsp;</td>
+          <td id="keyb2501" colspan="2" class="mod">&#x21e7;</td>
+          <td id="keyb2503" colspan="4" class="notch">&nbsp;</td>
+          <td id="keyb2507" colspan="2" class="shifted">Alt</td>
+          <td id="keyb2509" class="spec">i</td>
+        </tr>
+      </table>
+    </div>
+    <div
+        id="divKeyboardRomanShifted"
+        class="clsKeyDiv"
+        style="display: none;">
+      <table>
+        <tr>
+          <td id="keyb3000" class="punc">^</td>
+          <td id="keybscr3" class="screen" colspan="9">&nbsp;</td>
+          <td id="keyb3010" class="notch" colspan="2">&#x21d0;</td>
+        </tr>
+        <tr>
+          <td id="keyb3100" class="punc">&#xa1;</td>
+          <td id="keyb3101" class="punc">'</td>
+          <td id="keyb3102" class="punc">&#xb0;</td>
+          <td id="keyb3103" class="comb">&#x22f;</td>
+          <td id="keyb3104" class="comb">&#x1ecd;</td>
+          <td id="keyb3105" class="comb">&#x151;</td>
+          <td id="keyb3106" class="comb">&#x1eb;</td>
+          <td id="keyb3107" class="punc">&lt;</td>
+          <td id="keyb3108" class="punc">&gt;</td>
+          <td id="keyb3109" class="comb">&#xe5;</td>
+          <td id="keyb3110" class="punc">&#xbf;</td>
+          <td id="keyb3111">&#x141;</td>
+        </tr>
+        <tr>
+          <td id="keyb3200">Q</td>
+          <td id="keyb3201">W</td>
+          <td id="keyb3202">E</td>
+          <td id="keyb3203">R</td>
+          <td id="keyb3204">T</td>
+          <td id="keyb3205">Y</td>
+          <td id="keyb3206">U</td>
+          <td id="keyb3207">I</td>
+          <td id="keyb3208">O</td>
+          <td id="keyb3209">P</td>
+          <td id="keyb3210">&#xde;</td>
+          <td id="keyb3211">&#xd0;</td>
+        </tr>
+        <tr>
+          <td id="keyb3300">A</td>
+          <td id="keyb3301">S</td>
+          <td id="keyb3302">D</td>
+          <td id="keyb3303">F</td>
+          <td id="keyb3304">G</td>
+          <td id="keyb3305">H</td>
+          <td id="keyb3306">J</td>
+          <td id="keyb3307">K</td>
+          <td id="keyb3308">L</td>
+          <td id="keyb3309">&#xc6;</td>
+          <td id="keyb3310">&#x152;</td>
+          <td id="keyb3311">&#xd8;</td>
+        </tr>
+        <tr>
+          <td id="keyb3400">Z</td>
+          <td id="keyb3401">X</td>
+          <td id="keyb3402">C</td>
+          <td id="keyb3403">V</td>
+          <td id="keyb3404">B</td>
+          <td id="keyb3405">N</td>
+          <td id="keyb3406">M</td>
+          <td id="keyb3407" class="punc">&#x2039;</td>
+          <td id="keyb3408" class="punc">&#x203a;</td>
+          <td id="keyb3409" class="punc">&#x2014;</td>
+          <td
+            id="keyb3410"
+            class="notch"
+            colspan="2"
+            rowspan="2">&#x23ce;</td>
+        </tr>
+        <tr>
+          <td class="blank">&nbsp;</td>
+          <td id="keyb3501" colspan="2" class="shifted">&#x21e7;</td>
+          <td id="keyb3503" colspan="4" class="notch">&nbsp;</td>
+          <td id="keyb3507" colspan="2" class="shifted">Alt</td>
+          <td id="keyb3509" class="spec">i</td>
+        </tr>
+      </table>
+    </div>
+    <textarea
+      id="txtInput"
+      autocorrect="off"
+      autofocus
+      spellcheck="false"></textarea>
+    <div id="divPanel">
+      <input
+        type="button"
+        id="btnCopy"
+        value="Copy to clipboard"
+        onclick="ojitype.handleCopy()"/>
+    </div>
+  </body>
+</html>
